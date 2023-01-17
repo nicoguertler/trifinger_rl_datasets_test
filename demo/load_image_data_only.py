@@ -48,7 +48,7 @@ if __name__ == "__main__":
     print(f"Loading {args.n_timesteps} timesteps of image data.")
     images = env.get_image_data(
         # images from 3 cameras for each timestep
-        rng=(0, 3 * args.n_timesteps), 
+        rng=(0, 3 * args.n_timesteps),
         h5path=args.h5path
     )
 
@@ -61,7 +61,7 @@ if __name__ == "__main__":
     for i, image_tuple in enumerate(images):
         concatenated_image_tuple = np.concatenate(image_tuple, axis=1)
         concatenated_image_tuple = np.transpose(concatenated_image_tuple, (1, 2, 0))
-        output_image[:, i*width:(i + 1) * width, ...] = concatenated_image_tuple
+        output_image[:, i * width:(i + 1) * width, ...] = concatenated_image_tuple
 
     legend = "Each column corresponds to the camera images at one timestep."
     print(legend)

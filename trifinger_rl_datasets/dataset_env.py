@@ -205,7 +205,7 @@ class TriFingerDatasetEnv(gym.Env):
 
     def get_image_stats(self, h5path: Union[str, os.PathLike] = None) -> Dict:
         """Get image statistics from dataset.
-        
+
         Args:
             h5path:  Optional path to a HDF5 file containing the dataset, which will be
                 used instead of the default.
@@ -217,7 +217,8 @@ class TriFingerDatasetEnv(gym.Env):
 
         with h5py.File(h5path, "r") as dataset_file:
             image_stats = {
-                # have to subtract one because last index contains length of images dataset
+                # have to subtract one because last index contains length of images
+                # dataset
                 "n_images": dataset_file["image_data_indices"].shape[0] - 1,
                 "n_cameras": dataset_file["images"].attrs["n_cameras"],
                 "n_channels": dataset_file["images"].attrs["n_channels"],
@@ -226,12 +227,14 @@ class TriFingerDatasetEnv(gym.Env):
             }
         return image_stats
 
-    def get_image_data(self, rng:Tuple[int, int], h5path: Union[str, os.PathLike] = None) -> Dict:
+    def get_image_data(
+        self, rng: Tuple[int, int], h5path: Union[str, os.PathLike] = None
+    ) -> Dict:
         """Get image data from dataset.
-        
+
         Args:
-            rng:  Range of images to return. rng=(m,n) means that the images with indices
-                m to n-1 are returned.
+            rng:  Range of images to return. rng=(m,n) means that the images with
+                indices m to n-1 are returned.
             h5path:  Optional path to a HDF5 file containing the dataset, which will be
                 used instead of the default.
         Returns:
@@ -251,7 +254,9 @@ class TriFingerDatasetEnv(gym.Env):
 
         # mapping from image index to start of compressed image data
         # have to load one additional index to obtain size of last image
-        image_data_indices = dataset_file["image_data_indices"][slice(rng[0], rng[1] + 1)]
+        image_data_indices = dataset_file["image_data_indices"][
+            slice(rng[0], rng[1] + 1)
+        ]
         image_data_range = (image_data_indices[0], image_data_indices[-1])
         # load only relevant image data
         image_data = dataset_file["images"][slice(*image_data_range)]
@@ -266,7 +271,9 @@ class TriFingerDatasetEnv(gym.Env):
         for i in range(n_unique_images):
             timestep = i // n_cameras
             camera = i % n_cameras
-            compressed_image = image_data[image_data_indices[i] - offset: image_data_indices[i+1] - offset]
+            compressed_image = image_data[
+                image_data_indices[i] - offset: image_data_indices[i + 1] - offset
+            ]
             # decode image
             image = self._decode_image(compressed_image, image_codec)
             if reorder_pixels:
@@ -387,13 +394,19 @@ class TriFingerDatasetEnv(gym.Env):
                 h5path=h5path
             )
             # repeat images to account for control frequency > camera frequency
-            images = np.zeros((n_transitions, ) + unique_images.shape[1:], dtype=np.uint8)
+            images = np.zeros(
+                (n_transitions, ) + unique_images.shape[1:], dtype=np.uint8
+            )
             for i in range(n_transitions):
-                trans_index = (obs_to_image_index[i] - obs_to_image_index[0]) // n_cameras
+                trans_index = (
+                    (obs_to_image_index[i] - obs_to_image_index[0]) // n_cameras
+                )
                 images[i] = unique_images[trans_index]
 
-            data_dict["obs_to_image_index"] = obs_to_image_index # TODO: Should we drop this?
-            data_dict["unique_images"] = unique_images # TODO: Should we drop this?
+            # TODO: Should we drop this?
+            data_dict["obs_to_image_index"] = obs_to_image_index
+            # TODO: Should we drop this?
+            data_dict["unique_images"] = unique_images
             data_dict["images"] = images
 
         return data_dict

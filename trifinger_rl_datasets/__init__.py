@@ -77,7 +77,8 @@ dataset_params = [
             "obs_action_delay": 10,
         },
     },
-    # real-robot stage/pushing expert with images (mini version for testing with jpeg codec)
+    # real-robot stage/pushing expert with images (mini version for testing with jpeg
+    # codec)
     {
         "name": "trifinger-cube-push-real-expert-image-mini-jpeg-v0",
         "dataset_url": (
@@ -152,7 +153,9 @@ def get_env(**kwargs):
 
 
 for params in dataset_params:
-    register(id=params["name"], entry_point="trifinger_rl_datasets:get_env", kwargs=params)
+    register(
+        id=params["name"], entry_point="trifinger_rl_datasets:get_env", kwargs=params
+    )
 
 
 __all__ = ("TriFingerDatasetEnv", "Evaluation", "PolicyBase", "get_env")
