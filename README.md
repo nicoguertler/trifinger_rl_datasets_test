@@ -50,7 +50,7 @@ while not done:
 ```
 
 Alternatively, the observations can be obtained as nested dictionaries. This simplifies working with the data. As some parts of the observations might be more useful than others, it is also possible to filter the observations when requesting dictionaries (see `demo/load_filtered_dicts.py`):
-```
+```python
     # Nested dictionary defines which observations to keep.
     # Everything that is not included or has value False
     # will be dropped.
@@ -72,7 +72,7 @@ Alternatively, the observations can be obtained as nested dictionaries. This sim
 To transform the observation back to a flat array after filtering, simply set the keyword argument `flatten_obs` to true. Note that the step and reset functions will transform observations in the same manner as the `get_dataset` method to ensure compatibility. A downside of working with observations in the form of dictionaries is that they cause a considerable memory overhead during dataset loading.
 
 All datasets come in two versions: with and without camera observations. The versions with camera observations contain `-image` in their name. Despite PNG image compression they are more than one order of magnitude bigger than the imageless versions. To avoid running out of memory, a part of a dataset can be loaded by specifying a range of timesteps:
-```
+```python
 env = gym.make(
     "trifinger-cube-push-real-expert-image-v0",
     disable_env_checker=True
@@ -82,11 +82,11 @@ env = gym.make(
 dataset = env.get_dataset(rng=(1000, 2000))
 ```
 The camera observations corresponding to this range are then returned in `dataset["images"]` with the following dimensions:
-```
+```python
 n_timesteps, n_cameras, n_channels, height, width = dataset["images"].shape
 ```
 Since the camera frequency is lower than the control frequency, a camera image will repeat over several time steps. To load an array of camera images without this redundancy, the `get_image_data` method can be used:
-```
+```python
 # images from 3 cameras for each timestep
 image_stats = env.get_image_stats()
 n_cameras = image_stats["n_cameras"]
