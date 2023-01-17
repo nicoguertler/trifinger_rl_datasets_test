@@ -27,7 +27,7 @@ The datasets are named following the pattern `trifinger-cube-task-source-quality
 By default the observations are loaded as flat arrays. For the simulated datasets the environment can be stepped and visualized. Example usage (also see `demo/load_dataset.py`):
 
 ```python
-import gym
+import gymnasium as gym
 
 import trifinger_rl_datasets
 

@@ -1,7 +1,7 @@
 import typing
 from abc import ABC, abstractmethod
 
-import gym
+import gymnasium as gym
 import numpy as np
 
 ObservationType = typing.Union[np.ndarray, typing.Dict[str, typing.Any]]

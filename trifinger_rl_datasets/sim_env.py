@@ -3,7 +3,7 @@ from typing import Tuple, Dict, Any, Optional
 import logging
 import os
 
-import gym
+import gymnasium as gym
 import numpy as np
 
 import trifinger_simulation
@@ -296,7 +296,7 @@ class SimTriFingerCubeEnv(gym.Env):
 
     def step(
         self, action: np.ndarray, preappend_actions: bool = True
-    ) -> Tuple[dict, float, bool, dict]:
+    ) -> Tuple[dict, float, bool, bool, dict]:
         """Run one timestep of the environment's dynamics.
 
         When end of episode is reached, you are responsible for calling
@@ -311,8 +311,11 @@ class SimTriFingerCubeEnv(gym.Env):
             tuple:
             - observation (dict): agent's observation of the current environment.
             - reward (float): amount of reward returned after previous action.
-            - done (bool): whether the episode has ended, in which case further
-              step() calls will return undefined results.
+            - terminated (bool): whether the MDP has reached a terminal state. If true,
+                the user needs to call `reset()`.
+            - truncated (bool): Whether the truncation condition outside the scope
+                of the MDP is satisfied. For this environment this corresponds to a
+                timeout. If true, the user needs to call `reset()`.
             - info (dict): info dictionary containing the current time index.
         """
         if self.platform is None:
@@ -367,23 +370,23 @@ class SimTriFingerCubeEnv(gym.Env):
         reward = self.compute_reward(
             observation["achieved_goal"], observation["desired_goal"], info
         )
-        is_done = self.step_count >= self.episode_length
+        truncated = self.step_count >= self.episode_length
 
-        if not is_done and preappend_actions:
+        if not truncated and preappend_actions:
             # Append action to action queue of robot for as many time
             # steps as the obs_action_delay dictates. This gives the
             # user time to evaluate the policy.
             for _ in range(self.obs_action_delay):
                 self._append_desired_action(robot_action)
 
-        return observation, reward, is_done, info
+        return observation, reward, False, truncated, info
 
     def reset(  # type: ignore
-        self, return_info: bool = False, preappend_actions: bool = True
+        self, preappend_actions: bool = True
     ):
         """Reset the environment."""
 
-        super().reset(return_info=return_info)
+        super().reset()
 
         # hard-reset simulation
         del self.platform
@@ -411,17 +414,14 @@ class SimTriFingerCubeEnv(gym.Env):
         self.time_of_last_step = time()
         # need to already do one step to get initial observation
         self.t_obs = 0
-        obs, _, _, info = self.step(
+        obs, _, _, _, info = self.step(
             self._initial_action, preappend_actions=preappend_actions
         )
         info = {"time_index": -1}
 
-        if return_info:
-            return obs, info
-        else:
-            return obs
+        return obs, info
 
-    def reset_fingers(self, reset_wait_time: int = 3000, return_info: bool = False):
+    def reset_fingers(self, reset_wait_time: int = 3000):
         """Reset fingers to initial position.
 
         This resets neither the frontend nor the cube. This method is
@@ -438,10 +438,7 @@ class SimTriFingerCubeEnv(gym.Env):
         self.step_count = 0
         # block until reset wait time has passed and return observation
         obs, info = self._create_observation(t, self._initial_action)
-        if return_info:
-            return obs, info
-        else:
-            return obs
+        return obs, info
 
     def sample_new_goal(self, goal=None):
         """Sample a new desired goal."""

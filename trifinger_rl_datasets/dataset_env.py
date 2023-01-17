@@ -4,8 +4,8 @@ from typing import Union, Tuple, Dict, Optional, List, Any
 import urllib.request
 
 import cv2
-import gym
-import gym.spaces
+import gymnasium as gym
+import gymnasium.spaces as spaces
 import h5py
 import imagecodecs as ic
 import numpy as np
@@ -110,12 +110,12 @@ class TriFingerDatasetEnv(gym.Env):
             self._filtered_obs_space = self.sim_env.observation_space
         if self.flatten_obs:
             # flat obs space
-            self.observation_space = gym.spaces.flatten_space(self._filtered_obs_space)
+            self.observation_space = spaces.flatten_space(self._filtered_obs_space)
             if self.scale_obs:
                 self._obs_unscaled_low = self.observation_space.low
                 self._obs_unscaled_high = self.observation_space.high
                 # scale observations to [-1, 1]
-                self.observation_space = gym.spaces.Box(
+                self.observation_space = spaces.Box(
                     low=-1.0,
                     high=1.0,
                     shape=self.observation_space.shape,
@@ -133,7 +133,7 @@ class TriFingerDatasetEnv(gym.Env):
             keys_to_keep (dict): (Nested) dictionary with values being
                 either a dict or a bolean indicating whether to keep
                 an item.
-            d (dict or gym.spaces.Dict): Dicitionary or Dict space that
+            d (dict or gymnasium.spaces.Dict): Dicitionary or Dict space that
                 is to be filtered."""
 
         filtered_dict = {}
@@ -148,8 +148,8 @@ class TriFingerDatasetEnv(gym.Env):
                     "Expected boolean to indicate whether item "
                     "in observation space is to be kept."
                 )
-        if isinstance(d, gym.spaces.Dict):
-            filtered_dict = gym.spaces.Dict(spaces=filtered_dict)
+        if isinstance(d, spaces.Dict):
+            filtered_dict = spaces.Dict(spaces=filtered_dict)
         return filtered_dict
 
     def _scale_obs(self, obs: np.ndarray) -> np.ndarray:
@@ -168,7 +168,7 @@ class TriFingerDatasetEnv(gym.Env):
                 obs = self._filter_dict(self.obs_to_keep, obs)
         if self.flatten_obs and isinstance(obs, dict):
             # flatten obs
-            obs = gym.spaces.flatten(self._filtered_obs_space, obs)
+            obs = spaces.flatten(self._filtered_obs_space, obs)
         if self.scale_obs:
             # scale obs
             obs = self._scale_obs(obs)
@@ -317,7 +317,7 @@ class TriFingerDatasetEnv(gym.Env):
 
         # clip to make sure that there are no outliers in the data
         if clip:
-            orig_flat_obs_space = gym.spaces.flatten_space(self._orig_obs_space)
+            orig_flat_obs_space = spaces.flatten_space(self._orig_obs_space)
             data_dict["observations"] = data_dict["observations"].clip(
                 min=orig_flat_obs_space.low,
                 max=orig_flat_obs_space.high,
@@ -330,7 +330,7 @@ class TriFingerDatasetEnv(gym.Env):
             obs = data_dict["observations"]
             for i in range(obs.shape[0]):
                 unflattened_obs.append(
-                    gym.spaces.unflatten(self.sim_env.observation_space, obs[i, ...])
+                    spaces.unflatten(self.sim_env.observation_space, obs[i, ...])
                 )
             data_dict["observations"] = unflattened_obs
 
@@ -420,50 +420,38 @@ class TriFingerDatasetEnv(gym.Env):
 
         Returns:
             A tuple with
-
-            - observation (dict or array): observation of the current environment.
+            - observation (dict): agent's observation of the current environment.
             - reward (float): amount of reward returned after previous action.
-            - done (bool): whether the episode has ended, in which case further
-              step() calls will return undefined results.
+            - terminated (bool): whether the MDP has reached a terminal state. If true,
+                the user needs to call `reset()`.
+            - truncated (bool): Whether the truncation condition outside the scope
+                of the MDP is satisfied. For this environment this corresponds to a
+                timeout. If true, the user needs to call `reset()`.
             - info (dict): info dictionary containing the current time index.
         """
         if self.real_robot:
             raise NotImplementedError(
                 "The step method is not available for real-robot data."
             )
-        obs, rew, done, info = self.sim_env.step(action, **kwargs)
+        obs, rew, terminated, truncated, info = self.sim_env.step(action, **kwargs)
         # process obs
         processed_obs = self._process_obs(obs)
-        return processed_obs, rew, done, info
+        return processed_obs, rew, terminated, truncated, info
 
-    def reset(
-        self, return_info: bool = False
-    ) -> Union[Union[Dict, np.ndarray], Tuple[Union[Dict, np.ndarray], Dict]]:
+    def reset(self) -> Tuple[Union[Dict, np.ndarray], Dict]:
         """Reset the environment.
 
-        Args:
-            return_info:  If true, an "info" dictionary is returned in addition to the
-                observation.
-
         Returns:
-            If return_info is false: Observation of the initial environment state.
-            If return_info is true: Tuple of observation and info dictionary.
+            Tuple of observation and info dictionary.
         """
         if self.real_robot:
             raise NotImplementedError(
                 "The reset method is not available for real-robot data."
             )
-        rvals = self.sim_env.reset(return_info)
-        if return_info:
-            obs, info = rvals
-        else:
-            obs = rvals
+        obs, info = self.sim_env.reset()
         # process obs
         processed_obs = self._process_obs(obs)
-        if return_info:
-            return processed_obs, info
-        else:
-            return processed_obs
+        return processed_obs, info
 
     def seed(self, seed: Optional[int] = None) -> List[int]:
         """Set random seed of the environment."""
@@ -477,7 +465,7 @@ class TriFingerDatasetEnv(gym.Env):
             )
         self.sim_env.render(mode)
 
-    def reset_fingers(self, reset_wait_time: int = 3000, return_info: bool = False):
+    def reset_fingers(self, reset_wait_time: int = 3000):
         """Moves the fingers to initial position.
 
         This resets neither the frontend nor the cube. This method is supposed to be
@@ -488,14 +476,6 @@ class TriFingerDatasetEnv(gym.Env):
             raise NotImplementedError(
                 "The reset_fingers method is not available for real-robot data."
             )
-        rvals = self.sim_env.reset_fingers(reset_wait_time, return_info)
-        if return_info:
-            obs, info = rvals
-        else:
-            obs = rvals
-        # process obs
+        obs, info = self.sim_env.reset_fingers(reset_wait_time)
         processed_obs = self._process_obs(obs)
-        if return_info:
-            return processed_obs, info
-        else:
-            return processed_obs
+        return processed_obs, info

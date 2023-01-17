@@ -1,7 +1,7 @@
 """Load part of a datset defined by a range of transitions."""
 
 
-import gym
+import gymnasium as gym
 
 import trifinger_rl_datasets  # noqa
 

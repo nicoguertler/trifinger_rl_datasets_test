@@ -1,6 +1,6 @@
 __version__ = "1.1.1"
 
-from gym.envs.registration import register
+from gymnasium.envs.registration import register
 
 from .dataset_env import TriFingerDatasetEnv
 from .evaluation import Evaluation

@@ -1,5 +1,5 @@
 import argparse
-import gym
+import gymnasium as gym
 
 import trifinger_rl_datasets  # noqa
 
@@ -59,6 +59,7 @@ if __name__ == "__main__":
     print("First observation: ", dataset["observations"][0])
 
     obs = env.reset()
-    done = False
-    while not done:
-        obs, rew, done, info = env.step(env.action_space.sample())
+    truncated = False
+    terminated = False
+    while not (truncated or terminated):
+        obs, rew, terminated, truncated, info = env.step(env.action_space.sample())

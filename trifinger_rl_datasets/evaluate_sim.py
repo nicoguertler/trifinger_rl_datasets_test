@@ -7,7 +7,7 @@ import pathlib
 import sys
 import typing
 
-import gym
+import gymnasium as gym
 
 from trifinger_rl_datasets import Evaluation, PolicyBase, TriFingerDatasetEnv
 

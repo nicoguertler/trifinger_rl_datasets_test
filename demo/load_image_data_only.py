@@ -4,7 +4,7 @@
 import argparse
 
 import cv2
-import gym
+import gymnasium as gym
 import numpy as np
 
 import trifinger_rl_datasets  # noqa
