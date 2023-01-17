@@ -77,6 +77,22 @@ dataset_params = [
             "obs_action_delay": 10,
         },
     },
+    # real-robot stage/pushing expert with images (mini version for testing with jpeg codec)
+    {
+        "name": "trifinger-cube-push-real-expert-image-mini-jpeg-v0",
+        "dataset_url": (
+            "https://keeper.mpdl.mpg.de/f/053c21e01ff3446ebc7a/?dl=1"
+        ),
+        "ref_min_score": 0.0,
+        "ref_max_score": 1.0 * 15000 / 20,
+        "real_robot": True,
+        "trifinger_kwargs": {
+            "episode_length": 750,
+            "difficulty": 1,
+            "keypoint_obs": True,
+            "obs_action_delay": 10,
+        },
+    },
     # real-robot stage/pushing mixed
     {
         "name": "trifinger-cube-push-real-mixed-v0",

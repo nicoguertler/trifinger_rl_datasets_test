@@ -174,10 +174,15 @@ class TriFingerDatasetEnv(gym.Env):
             obs = self._scale_obs(obs)
         return obs
 
-    def _decode_image(self, image: np.ndarray) -> np.ndarray:
+    def _decode_image(self, image: np.ndarray, image_codec: str) -> np.ndarray:
         """Decode image from numpy array of type void."""
         image = bytes(image)
-        image = ic.png_decode(image)
+        if image_codec == "png":
+            image = ic.png_decode(image)
+        elif image_codec == "jpeg":
+            image = ic.jpeg_decode(image)
+        else:
+            raise ValueError("Unsupported image codec: {compression}.")
         return image
 
     def _reorder_pixels(self, img: np.ndarray) -> np.ndarray:
@@ -239,7 +244,10 @@ class TriFingerDatasetEnv(gym.Env):
         n_cameras = dataset_file["images"].attrs["n_cameras"]
         n_channels = dataset_file["images"].attrs["n_channels"]
         image_shape = tuple(dataset_file["images"].attrs["image_shape"])
+        image_codec = dataset_file["images"].attrs["image_codec"]
         reorder_pixels = dataset_file["images"].attrs["reorder_pixels"]
+        compression = dataset_file["images"].attrs["compression"]
+        assert compression == "image", "Only image compression is supported."
 
         # mapping from image index to start of compressed image data
         # have to load one additional index to obtain size of last image
@@ -260,7 +268,7 @@ class TriFingerDatasetEnv(gym.Env):
             camera = i % n_cameras
             compressed_image = image_data[image_data_indices[i] - offset: image_data_indices[i+1] - offset]
             # decode image
-            image = self._decode_image(compressed_image)
+            image = self._decode_image(compressed_image, image_codec)
             if reorder_pixels:
                 # undo reordering of pixels
                 image = self._reorder_pixels(image)
