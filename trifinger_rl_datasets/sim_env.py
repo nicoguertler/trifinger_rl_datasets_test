@@ -58,7 +58,7 @@ class SimTriFingerCubeEnv(gym.Env):
         # Basic initialization
         # ====================
 
-        self.logger = logging.getLogger("rrc_2022_datasets.SimTriFingerCubeEnv")
+        self.logger = logging.getLogger("trifinger_rl_datasets.SimTriFingerCubeEnv")
 
         assert (
             obs_action_delay < self._step_size

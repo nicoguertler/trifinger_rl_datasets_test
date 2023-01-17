@@ -61,6 +61,22 @@ dataset_params = [
             "obs_action_delay": 10,
         },
     },
+    # real-robot stage/pushing expert with images (mini version for testing)
+    {
+        "name": "trifinger-cube-push-real-expert-image-mini-v0",
+        "dataset_url": (
+            "https://keeper.mpdl.mpg.de/f/644d32d6b93241b29e0b/?dl=1"
+        ),
+        "ref_min_score": 0.0,
+        "ref_max_score": 1.0 * 15000 / 20,
+        "real_robot": True,
+        "trifinger_kwargs": {
+            "episode_length": 750,
+            "difficulty": 1,
+            "keypoint_obs": True,
+            "obs_action_delay": 10,
+        },
+    },
     # real-robot stage/pushing mixed
     {
         "name": "trifinger-cube-push-real-mixed-v0",
@@ -120,7 +136,7 @@ def get_env(**kwargs):
 
 
 for params in dataset_params:
-    register(id=params["name"], entry_point="rrc_2022_datasets:get_env", kwargs=params)
+    register(id=params["name"], entry_point="trifinger_rl_datasets:get_env", kwargs=params)
 
 
 __all__ = ("TriFingerDatasetEnv", "Evaluation", "PolicyBase", "get_env")

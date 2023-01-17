@@ -9,7 +9,7 @@ import typing
 
 import gym
 
-from rrc_2022_datasets import Evaluation, PolicyBase, TriFingerDatasetEnv
+from trifinger_rl_datasets import Evaluation, PolicyBase, TriFingerDatasetEnv
 
 
 def load_policy_class(policy_class_str: str) -> typing.Type[PolicyBase]:

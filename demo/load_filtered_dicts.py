@@ -1,7 +1,7 @@
 import argparse
 import gym
 
-import rrc_2022_datasets  # noqa
+import trifinger_rl_datasets  # noqa
 
 
 if __name__ == "__main__":

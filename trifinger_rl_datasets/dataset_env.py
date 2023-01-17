@@ -3,9 +3,11 @@ import os
 from typing import Union, Tuple, Dict, Optional, List, Any
 import urllib.request
 
+import cv2
 import gym
 import gym.spaces
 import h5py
+import imagecodecs as ic
 import numpy as np
 from tqdm import tqdm
 
@@ -13,7 +15,7 @@ from .sim_env import SimTriFingerCubeEnv
 
 
 def download_dataset(url, name):
-    data_dir = os.path.expanduser("~/.rrc_2022_datasets")
+    data_dir = os.path.expanduser("~/.trifinger_rl_datasets")
     os.makedirs(data_dir, exist_ok=True)
     local_path = os.path.join(data_dir, name + ".hdf5")
     if not os.path.exists(local_path):
@@ -29,6 +31,8 @@ class TriFingerDatasetEnv(gym.Env):
 
     Similar to D4RL's OfflineEnv but with slightly different data loading and
     options for customization of observation space."""
+
+    _PRELOAD_KEYS = ["observations", "actions", "rewards", "episode_ends"]
 
     def __init__(
         self,
@@ -170,30 +174,144 @@ class TriFingerDatasetEnv(gym.Env):
             obs = self._scale_obs(obs)
         return obs
 
+    def _decode_image(self, image: np.ndarray) -> np.ndarray:
+        """Decode image from numpy array of type void."""
+        image = bytes(image)
+        image = ic.png_decode(image)
+        return image
+
+    def _reorder_pixels(self, img: np.ndarray) -> np.ndarray:
+        """Undo reordering of Bayer pattern."""
+        new = np.empty_like(img)
+        a = img.shape[0] // 2
+        b = img.shape[1] // 2
+
+        red = img[0:a, 0:b]
+        blue = img[a:, 0:b]
+        green1 = img[0:a, b:]
+        green2 = img[a:, b:]
+
+        new[0::2, 0::2] = red
+        new[1::2, 1::2] = blue
+        new[0::2, 1::2] = green1
+        new[1::2, 0::2] = green2
+
+        return new
+
+    def get_image_stats(self, h5path: Union[str, os.PathLike] = None) -> Dict:
+        """Get image statistics from dataset.
+        
+        Args:
+            h5path:  Optional path to a HDF5 file containing the dataset, which will be
+                used instead of the default.
+        Returns:
+            The image statistics.
+        """
+        if h5path is None:
+            h5path = download_dataset(self.dataset_url, self.name)
+
+        with h5py.File(h5path, "r") as dataset_file:
+            image_stats = {
+                # have to subtract one because last index contains length of images dataset
+                "n_images": dataset_file["image_data_indices"].shape[0] - 1,
+                "n_cameras": dataset_file["images"].attrs["n_cameras"],
+                "n_channels": dataset_file["images"].attrs["n_channels"],
+                "image_shape": tuple(dataset_file["images"].attrs["image_shape"]),
+                "reorder_pixels": dataset_file["images"].attrs["reorder_pixels"],
+            }
+        return image_stats
+
+    def get_image_data(self, rng:Tuple[int, int], h5path: Union[str, os.PathLike] = None) -> Dict:
+        """Get image data from dataset.
+        
+        Args:
+            rng:  Range of images to return. rng=(m,n) means that the images with indices
+                m to n-1 are returned.
+            h5path:  Optional path to a HDF5 file containing the dataset, which will be
+                used instead of the default.
+        Returns:
+            The image data (or a part of it specified by rng).
+        """
+        if h5path is None:
+            h5path = download_dataset(self.dataset_url, self.name)
+        dataset_file = h5py.File(h5path, "r")
+
+        n_cameras = dataset_file["images"].attrs["n_cameras"]
+        n_channels = dataset_file["images"].attrs["n_channels"]
+        image_shape = tuple(dataset_file["images"].attrs["image_shape"])
+        reorder_pixels = dataset_file["images"].attrs["reorder_pixels"]
+
+        # mapping from image index to start of compressed image data
+        # have to load one additional index to obtain size of last image
+        image_data_indices = dataset_file["image_data_indices"][slice(rng[0], rng[1] + 1)]
+        image_data_range = (image_data_indices[0], image_data_indices[-1])
+        # load only relevant image data
+        image_data = dataset_file["images"][slice(*image_data_range)]
+        n_unique_images = rng[1] - rng[0]
+        n_timesteps = int(np.ceil(n_unique_images / n_cameras))
+        unique_images = np.zeros(
+            (n_timesteps, n_cameras, n_channels) + image_shape,
+            dtype=np.uint8
+        )
+        offset = image_data_range[0]
+        # TODO: Should we parallelize this?
+        for i in range(n_unique_images):
+            timestep = i // n_cameras
+            camera = i % n_cameras
+            compressed_image = image_data[image_data_indices[i] - offset: image_data_indices[i+1] - offset]
+            # decode image
+            image = self._decode_image(compressed_image)
+            if reorder_pixels:
+                # undo reordering of pixels
+                image = self._reorder_pixels(image)
+            # debayer image
+            image = cv2.cvtColor(image, cv2.COLOR_BAYER_BG2BGR)
+            # convert to channel first
+            unique_images[timestep, camera, ...] = np.transpose(image, (2, 0, 1))
+
+        return unique_images
+
     def get_dataset(
-        self, h5path: Union[str, os.PathLike] = None, clip: bool = True
+        self, h5path: Union[str, os.PathLike] = None, clip: bool = True,
+        rng: Optional[Tuple[int, int]] = None
     ) -> Dict[str, Any]:
         """Get the dataset.
 
         When called for the first time, the dataset is automatically downloaded and
-        saved to ``~/.rrc_2022_datasets``.
+        saved to ``~/.trifinger_rl_datasets``.
 
         Args:
             h5path:  Optional path to a HDF5 file containing the dataset, which will be
                 used instead of the default.
             clip:  If True, observations are clipped to be within the environment's
-                observation space
-
+                observation space.
+            rng:  Optional range to return. rng=(m,n) means that observations, actions
+                and rewards m to n-1 are returned. If not specified, the entire
+                dataset is returned.
         Returns:
-            The dataset.
+            The dataset (or a part of it specified by rng).
         """
         if h5path is None:
             h5path = download_dataset(self.dataset_url, self.name)
+        dataset_file = h5py.File(h5path, "r")
+
+        # turn range into slice
+        n_avail_transitions = dataset_file["observations"].shape[0]
+        if rng is None:
+            rng = (None, None)
+        rng = (
+            0 if rng[0] is None else rng[0],
+            n_avail_transitions if rng[1] is None else rng[1]
+
+        )
+        range_slice = slice(*rng)
 
         data_dict = {}
-        with h5py.File(h5path, "r") as dataset_file:
-            for k in tqdm(dataset_file.keys(), desc="Loading datafile"):
+        for k in tqdm(self._PRELOAD_KEYS, desc="Loading datafile"):
+            if k == "episode_ends":
                 data_dict[k] = dataset_file[k][:]
+            else:
+                data_dict[k] = dataset_file[k][range_slice]
 
         n_transitions = data_dict["observations"].shape[0]
 
@@ -218,6 +336,14 @@ class TriFingerDatasetEnv(gym.Env):
 
         # timeouts, terminals and info
         episode_ends = data_dict["episode_ends"]
+        if rng is not None:
+            # Filter episode_ends for entries which are between trans_range[0]
+            # and trans_range[1] and make use of episode_ends being sorted.
+            start_index = np.searchsorted(episode_ends, rng[0], side="left")
+            end_index = np.searchsorted(episode_ends, rng[1], side="left")
+            episode_ends = episode_ends[start_index:end_index]
+            episode_ends = episode_ends - rng[0]
+            data_dict["episode_ends"] = episode_ends
         data_dict["timeouts"] = np.zeros(n_transitions, dtype=bool)
         if not self.set_terminals:
             data_dict["timeouts"][episode_ends] = True
@@ -236,6 +362,31 @@ class TriFingerDatasetEnv(gym.Env):
             data_dict["observations"] = np.array(
                 data_dict["observations"], dtype=self.observation_space.dtype
             )
+
+        if "images" in dataset_file.keys():
+            # mapping from observation index to image index
+            # (necessary since the camera frequency < control frequency)
+            obs_to_image_index = dataset_file["obs_to_image_index"][range_slice]
+            n_cameras = dataset_file["images"].attrs["n_cameras"]
+            image_index_range = (
+                obs_to_image_index[0],
+                # add n_cameras to include last images as well
+                obs_to_image_index[-1] + n_cameras
+            )
+            # load images
+            unique_images = self.get_image_data(
+                rng=image_index_range,
+                h5path=h5path
+            )
+            # repeat images to account for control frequency > camera frequency
+            images = np.zeros((n_transitions, ) + unique_images.shape[1:], dtype=np.uint8)
+            for i in range(n_transitions):
+                trans_index = (obs_to_image_index[i] - obs_to_image_index[0]) // n_cameras
+                images[i] = unique_images[trans_index]
+
+            data_dict["obs_to_image_index"] = obs_to_image_index # TODO: Should we drop this?
+            data_dict["unique_images"] = unique_images # TODO: Should we drop this?
+            data_dict["images"] = images
 
         return data_dict
 

@@ -1,6 +1,6 @@
 import gym
 
-import rrc_2022_datasets  # noqa
+import trifinger_rl_datasets  # noqa
 
 
 if __name__ == "__main__":
@@ -9,7 +9,6 @@ if __name__ == "__main__":
         disable_env_checker=True,
         visualization=True,  # enable visualization
     )
-
     dataset = env.get_dataset()
 
     n_transitions = len(dataset["observations"])
