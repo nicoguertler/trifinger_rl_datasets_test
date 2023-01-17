@@ -219,7 +219,7 @@ class TriFingerDatasetEnv(gym.Env):
             image_stats = {
                 # have to subtract one because last index contains length of images
                 # dataset
-                "n_images": dataset_file["image_data_indices"].shape[0] - 1,
+                "n_images": dataset_file["image_data_index"].shape[0] - 1,
                 "n_cameras": dataset_file["images"].attrs["n_cameras"],
                 "n_channels": dataset_file["images"].attrs["n_channels"],
                 "image_shape": tuple(dataset_file["images"].attrs["image_shape"]),
@@ -254,10 +254,10 @@ class TriFingerDatasetEnv(gym.Env):
 
         # mapping from image index to start of compressed image data
         # have to load one additional index to obtain size of last image
-        image_data_indices = dataset_file["image_data_indices"][
+        image_data_index = dataset_file["image_data_index"][
             slice(rng[0], rng[1] + 1)
         ]
-        image_data_range = (image_data_indices[0], image_data_indices[-1])
+        image_data_range = (image_data_index[0], image_data_index[-1])
         # load only relevant image data
         image_data = dataset_file["images"][slice(*image_data_range)]
         n_unique_images = rng[1] - rng[0]
@@ -272,7 +272,7 @@ class TriFingerDatasetEnv(gym.Env):
             timestep = i // n_cameras
             camera = i % n_cameras
             compressed_image = image_data[
-                image_data_indices[i] - offset: image_data_indices[i + 1] - offset
+                image_data_index[i] - offset: image_data_index[i + 1] - offset
             ]
             # decode image
             image = self._decode_image(compressed_image, image_codec)
