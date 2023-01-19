@@ -236,7 +236,7 @@ class TriFingerDatasetEnv(gym.Env):
 
     def get_image_data(
         self, rng: Tuple[int, int], h5path: Union[str, os.PathLike] = None
-    ) -> Dict:
+    ) -> np.ndarray:
         """Get image data from dataset.
 
         Args:
@@ -245,7 +245,9 @@ class TriFingerDatasetEnv(gym.Env):
             h5path:  Optional path to a HDF5 file containing the dataset, which will be
                 used instead of the default.
         Returns:
-            The image data (or a part of it specified by rng).
+            The image data (or a part of it specified by rng) as a numpy array with the
+            shape (n_camera_timesteps, n_cameras, n_channels, height, width). The
+            channels are ordered as RGB.
         """
         if h5path is None:
             h5path = download_dataset(self.dataset_url, self.name)
@@ -286,8 +288,8 @@ class TriFingerDatasetEnv(gym.Env):
             if reorder_pixels:
                 # undo reordering of pixels
                 image = self._reorder_pixels(image)
-            # debayer image
-            image = cv2.cvtColor(image, cv2.COLOR_BAYER_BG2BGR)
+            # debayer image (output channels in RGB order)
+            image = cv2.cvtColor(image, cv2.COLOR_BAYER_BG2RGB)
             # convert to channel first
             unique_images[timestep, camera, ...] = np.transpose(image, (2, 0, 1))
 

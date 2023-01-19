@@ -67,6 +67,8 @@ if __name__ == "__main__":
         concatenated_image_tuple = np.transpose(concatenated_image_tuple, (1, 2, 0))
         # copy column of camera images to output image
         output_image[:, i * width:(i + 1) * width, ...] = concatenated_image_tuple
+    # convert RGB to BGR for cv2
+    output_image = cv2.cvtColor(output_image, cv2.COLOR_RGB2BGR)
 
     legend = "Each column corresponds to the camera images at one timestep."
     print(legend)
