@@ -9,18 +9,18 @@ if __name__ == "__main__":
         description="Demonstrate how to customize observation space by filtering."
     )
     parser.add_argument(
-        "--env_name",
+        "--env-name",
         type=str,
         default="trifinger-cube-push-sim-expert-v0",
         help="Name of the gym environment to load.",
     )
     parser.add_argument(
-        "--do_not_filter_obs",
+        "--do-not-filter-obs",
         action="store_true",
         help="Do not filter observations if this is set.",
     )
     parser.add_argument(
-        "--flatten_obs",
+        "--flatten-obs",
         action="store_true",
         help="Flatten observations again after filtering if this is set.",
     )

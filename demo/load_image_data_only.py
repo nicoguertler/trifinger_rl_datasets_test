@@ -19,7 +19,7 @@ if __name__ == "__main__":
         help="Name of dataset environment to load.",
     )
     argparser.add_argument(
-        "--n_timesteps",
+        "--n-timesteps",
         type=int,
         default=10,
         help="Number of timesteps to load image data for.",
