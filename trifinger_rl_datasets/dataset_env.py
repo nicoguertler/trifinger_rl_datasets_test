@@ -14,16 +14,26 @@ from tqdm import tqdm
 from .sim_env import SimTriFingerCubeEnv
 
 
-def download_dataset(url, name):
+def download_dataset(urls, name):
+    if not isinstance(urls, list):
+        urls = [urls]
     data_dir = os.path.expanduser("~/.trifinger_rl_datasets")
     os.makedirs(data_dir, exist_ok=True)
-    local_path = os.path.join(data_dir, name + ".hdf5")
-    if not os.path.exists(local_path):
-        print(f'Downloading dataset "{url}" to "{local_path}".')
-        urllib.request.urlretrieve(url, local_path)
+    print("Downloading dataset files if not already present.")
+    for i, url in tqdm(enumerate(urls)):
+        if i == 0:
+            # first URL is the main dataset
+            local_path = os.path.join(data_dir, name + ".hdf5")
+            local_main_path = local_path
+        else:
+            # additional URLs are for the images
+            local_path = os.path.join(data_dir, name + f"_{i - 1}.hdf5")
         if not os.path.exists(local_path):
-            raise IOError(f"Failed to download dataset from {url}.")
-    return local_path
+            print(f'"{url}" to "{local_path}".')
+            urllib.request.urlretrieve(url, local_path)
+            if not os.path.exists(local_path):
+                raise IOError(f"Failed to download dataset from {url}.")
+    return local_main_path
 
 
 class TriFingerDatasetEnv(gym.Env):
@@ -267,6 +277,7 @@ class TriFingerDatasetEnv(gym.Env):
             h5path = download_dataset(self.dataset_url, self.name)
 
         with h5py.File(h5path, "r") as dataset_file:
+            print(dataset_file.keys())
             image_stats = {
                 # have to subtract one because last index contains length of images
                 # dataset
