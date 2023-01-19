@@ -29,7 +29,7 @@ def download_dataset(url, name):
 class TriFingerDatasetEnv(gym.Env):
     """TriFinger environment which can load an offline RL dataset from a file.
 
-    Similar to D4RL's OfflineEnv but with slightly different data loading and
+    Similar to D4RL's OfflineEnv but with different data loading and
     options for customization of observation space."""
 
     _PRELOAD_KEYS = ["observations", "actions", "rewards", "episode_ends"]
@@ -313,8 +313,67 @@ class TriFingerDatasetEnv(gym.Env):
                 and rewards m to n-1 are returned. If not specified, the entire
                 dataset is returned.
         Returns:
-            The dataset (or a part of it specified by rng).
+            A dictionary with the following items:
+                - observations: Either an array or a list of dictionaries
+                    containing the observations depending on whether
+                    `flatten_obs` is True or False.
+                - actions: Array containing the actions.
+                - rewards: Array containing the rewards.
+                - timeouts: Array containing the timeouts (True only at
+                    the end of an episode by default. Always False if
+                    `set_terminals` is True).
+                - terminals: Array containing the terminals (Always
+                    False by default. If `set_terminals` is True, only
+                    True at the last timestep of an episode).
+                - episode_ends: Array containing the indices of the last
+                    timestep of each episode.
+                - image_data (only if present in dataset): Array of the
+                    shape (n_control_timesteps, n_cameras, n_channels,
+                    height, width) containing the image data. The cannels
+                    are ordered as RGB.
         """
+
+        # The offline RL dataset is loaded from a HDF5 file which contains
+        # the following HDF5 datasets (this is an implementation detail and
+        # not necessary to understand for users of the class):
+        # - observations: Two-dimensional array of shape
+        #     `(n_control_timesteps, n_obs)` containing the observations as
+        #     flat vectors of length `n_obs`.
+        # - actions: Two-dimensional array of shape `(n_control_timesteps,
+        #     n_actions)` containing the actions.
+        # - rewards: One-dimensional array of length `n_control_timesteps`
+        #     containing the rewards.
+        # - episode_ends: One-dimensional array of length `n_episodes`
+        #     containing the indices of the last control timestep of each
+        #     episode.
+        # - image_data: One-dimensional array of dtype "V1", i.e., void of
+        #     length one byte, which contains the compressed image data. The
+        #     images obtained from all cameras at each camera time step are
+        #     written one after another to this array. The dataset has the
+        #     following attributes:
+        #     - n_cameras: Number of cameras.
+        #     - n_channels: Number of channels per camera image.
+        #     - compression: Type of compression used. Only "image" is
+        #       supported by this class.
+        #     - image_codec: Codec used to compress the image data. Only
+        #       "jpeg" and "png" are supported by this class.
+        #     - image_shape: Tuple of length 2 containing the height and width
+        #       of the images.
+        #     - reorder_pixels: If True, the pixels of the images are
+        #       reordered into blocks corresponding to one color channel.
+        #       Before debayering, the pixels have to be reordered back.
+        # - image_data_index: One-dimensional array of length
+        #     `n_camera_timesteps + 1` containing the indices of the start
+        #     of the compressed image data for each camera image in
+        #     `image_data`. n_cameras consecutive image indices correspond to
+        #     the images of all cameras at one camera time step. The last
+        #     index is the length of `image_data`.
+        # - obs_to_image_index: One-dimensional array of length
+        #     `n_control_timesteps` containing the index of the camera
+        #      image corresponding to each control timestep. This mapping
+        #      is necessary because the camera frequency is lower than the
+        #      control frequency.
+
         if h5path is None:
             h5path = download_dataset(self.dataset_url, self.name)
         dataset_file = h5py.File(h5path, "r")
@@ -337,7 +396,7 @@ class TriFingerDatasetEnv(gym.Env):
             else:
                 data_dict[k] = dataset_file[k][range_slice]
 
-        n_transitions = data_dict["observations"].shape[0]
+        n_control_timesteps = data_dict["observations"].shape[0]
 
         # clip to make sure that there are no outliers in the data
         if clip:
@@ -367,16 +426,16 @@ class TriFingerDatasetEnv(gym.Env):
         episode_ends = episode_ends[start_index:end_index]
         episode_ends = episode_ends - rng[0]
         data_dict["episode_ends"] = episode_ends
-        data_dict["timeouts"] = np.zeros(n_transitions, dtype=bool)
+        data_dict["timeouts"] = np.zeros(n_control_timesteps, dtype=bool)
         if not self.set_terminals:
             data_dict["timeouts"][episode_ends] = True
-        data_dict["terminals"] = np.zeros(n_transitions, dtype=bool)
+        data_dict["terminals"] = np.zeros(n_control_timesteps, dtype=bool)
         if self.set_terminals:
             data_dict["terminals"][episode_ends] = True
-        data_dict["infos"] = [{} for _ in range(n_transitions)]
+        data_dict["infos"] = [{} for _ in range(n_control_timesteps)]
 
         # process obs (filtering, flattening, scaling)
-        for i in range(n_transitions):
+        for i in range(n_control_timesteps):
             data_dict["observations"][i] = self._process_obs(
                 data_dict["observations"][i]
             )
@@ -403,9 +462,9 @@ class TriFingerDatasetEnv(gym.Env):
             )
             # repeat images to account for control frequency > camera frequency
             images = np.zeros(
-                (n_transitions, ) + unique_images.shape[1:], dtype=np.uint8
+                (n_control_timesteps, ) + unique_images.shape[1:], dtype=np.uint8
             )
-            for i in range(n_transitions):
+            for i in range(n_control_timesteps):
                 trans_index = (
                     (obs_to_image_index[i] - obs_to_image_index[0]) // n_cameras
                 )
