@@ -53,7 +53,7 @@ if __name__ == "__main__":
     )
 
     # concatenate images from all camera timesteps and cameras and show them
-    #-----------------------------------------------------------------------
+    # ----------------------------------------------------------------------
     n_timesteps, n_cameras, n_channels, height, width = images.shape
     output_image = np.zeros(
         (n_cameras * height, n_timesteps * width, n_channels),

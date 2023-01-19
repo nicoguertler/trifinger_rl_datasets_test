@@ -203,6 +203,50 @@ class TriFingerDatasetEnv(gym.Env):
 
         return new
 
+    def get_obs_indices(self):
+        """Get index ranges that correspond to the different observation components.
+
+        Also returns a dictionary containing the shapes of these observation
+        components.
+
+        Returns:
+            A tuple containing:
+            - A dictionary with keys corresponding to the observation components and
+            values being tuples of the form (start, end), where start and end are
+            the indices at which the observation component starts and ends. The
+            nested dictionary structure of the observation is preserved.
+            - A dictionary of the same structure but with values being the shapes
+            of the observation components."""
+
+        def _construct_dummy_obs(spaces_dict, counter=[0]):
+            """Construct dummy observation which has an array repeating
+            a different integer as the value of each component."""
+            dummy_obs = {}
+            for i, (k, v) in enumerate(spaces_dict.items()):
+                if isinstance(v, spaces.Dict):
+                    dummy_obs[k] = _construct_dummy_obs(v.spaces, counter)
+                else:
+                    dummy_obs[k] = counter * np.ones(v.shape, dtype=np.int32)
+                    counter[0] += 1
+            return dummy_obs
+
+        dummy_obs = _construct_dummy_obs(self._orig_obs_space.spaces)
+        flat_dummy_obs = spaces.flatten(self._orig_obs_space, dummy_obs)
+
+        def _get_indices_and_shape(dummy_obs, flat_dummy_obs):
+            indices = {}
+            shape = {}
+            for k, v in dummy_obs.items():
+                if isinstance(v, dict):
+                    indices[k], shape[k] = _get_indices_and_shape(v, flat_dummy_obs)
+                else:
+                    where = np.where(flat_dummy_obs == v.flatten()[0])[0]
+                    indices[k] = (int(where[0]), int(where[-1]) + 1)
+                    shape[k] = v.shape
+            return indices, shape
+
+        return _get_indices_and_shape(dummy_obs, flat_dummy_obs)
+
     def get_image_stats(self, h5path: Union[str, os.PathLike] = None) -> Dict:
         """Get statistics of image data in dataset.
 
