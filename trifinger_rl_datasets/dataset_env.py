@@ -360,14 +360,13 @@ class TriFingerDatasetEnv(gym.Env):
 
         # timeouts, terminals and info
         episode_ends = data_dict["episode_ends"]
-        if rng is not None:
-            # Filter episode_ends for entries which are between trans_range[0]
-            # and trans_range[1] and make use of episode_ends being sorted.
-            start_index = np.searchsorted(episode_ends, rng[0], side="left")
-            end_index = np.searchsorted(episode_ends, rng[1], side="left")
-            episode_ends = episode_ends[start_index:end_index]
-            episode_ends = episode_ends - rng[0]
-            data_dict["episode_ends"] = episode_ends
+        # Filter episode_ends for entries which are between trans_range[0]
+        # and trans_range[1] and make use of episode_ends being sorted.
+        start_index = np.searchsorted(episode_ends, rng[0], side="left")
+        end_index = np.searchsorted(episode_ends, rng[1], side="left")
+        episode_ends = episode_ends[start_index:end_index]
+        episode_ends = episode_ends - rng[0]
+        data_dict["episode_ends"] = episode_ends
         data_dict["timeouts"] = np.zeros(n_transitions, dtype=bool)
         if not self.set_terminals:
             data_dict["timeouts"][episode_ends] = True
