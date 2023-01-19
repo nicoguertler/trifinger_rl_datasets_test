@@ -53,14 +53,19 @@ if __name__ == "__main__":
     )
 
     # concatenate images from all camera timesteps and cameras and show them
+    #-----------------------------------------------------------------------
     n_timesteps, n_cameras, n_channels, height, width = images.shape
     output_image = np.zeros(
         (n_cameras * height, n_timesteps * width, n_channels),
         dtype=np.uint8
     )
+    # loop over tuples containing images from all cameras at one timestep
     for i, image_tuple in enumerate(images):
+        # concatenate images from all cameras along the height axis
         concatenated_image_tuple = np.concatenate(image_tuple, axis=1)
+        # change to (height, width, channels) format for cv2
         concatenated_image_tuple = np.transpose(concatenated_image_tuple, (1, 2, 0))
+        # copy column of camera images to output image
         output_image[:, i * width:(i + 1) * width, ...] = concatenated_image_tuple
 
     legend = "Each column corresponds to the camera images at one timestep."

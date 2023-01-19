@@ -204,13 +204,20 @@ class TriFingerDatasetEnv(gym.Env):
         return new
 
     def get_image_stats(self, h5path: Union[str, os.PathLike] = None) -> Dict:
-        """Get image statistics from dataset.
+        """Get statistics of image data in dataset.
 
         Args:
             h5path:  Optional path to a HDF5 file containing the dataset, which will be
                 used instead of the default.
         Returns:
-            The image statistics.
+            The statistics of the image data as a dictionary with keys:
+                - n_images: Number of images in the dataset.
+                - n_cameras: Number of cameras used to capture the images.
+                - n_channels: Number of channels in the images.
+                - image_shape: Shape of the images in the format (height, width).
+                - reorder_pixels: Whether the pixels in the images have been reordered
+                    to have the pixels corresponding to one color in the Bayer pattern
+                    together in blocks (to improve image compression).
         """
         if h5path is None:
             h5path = download_dataset(self.dataset_url, self.name)
