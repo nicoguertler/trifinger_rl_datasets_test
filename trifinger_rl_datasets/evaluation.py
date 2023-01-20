@@ -69,7 +69,7 @@ class Evaluation:
             print("Start episode {}".format(i))
             # reset episode periodically to simulate start of a new robot job
             if i % episode_batch_size == 0:
-                initial_obs, initial_info = self.env.reset(return_info=True)
+                initial_obs, initial_info = self.env.reset()
             # run episode
             ep_stats = self.run_episode(initial_obs, initial_info, policy)
             ep_stats_list.append(ep_stats)

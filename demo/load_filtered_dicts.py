@@ -1,7 +1,7 @@
 import argparse
-import gym
+import gymnasium as gym
 
-import rrc_2022_datasets  # noqa
+import trifinger_rl_datasets  # noqa
 
 
 if __name__ == "__main__":
@@ -9,18 +9,18 @@ if __name__ == "__main__":
         description="Demonstrate how to customize observation space by filtering."
     )
     parser.add_argument(
-        "--env_name",
+        "--env-name",
         type=str,
         default="trifinger-cube-push-sim-expert-v0",
         help="Name of the gym environment to load.",
     )
     parser.add_argument(
-        "--do_not_filter_obs",
+        "--do-not-filter-obs",
         action="store_true",
         help="Do not filter observations if this is set.",
     )
     parser.add_argument(
-        "--flatten_obs",
+        "--flatten-obs",
         action="store_true",
         help="Flatten observations again after filtering if this is set.",
     )
@@ -59,6 +59,7 @@ if __name__ == "__main__":
     print("First observation: ", dataset["observations"][0])
 
     obs = env.reset()
-    done = False
-    while not done:
-        obs, rew, done, info = env.step(env.action_space.sample())
+    truncated = False
+    terminated = False
+    while not (truncated or terminated):
+        obs, rew, terminated, truncated, info = env.step(env.action_space.sample())
