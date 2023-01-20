@@ -277,7 +277,6 @@ class TriFingerDatasetEnv(gym.Env):
             h5path = download_dataset(self.dataset_url, self.name)
 
         with h5py.File(h5path, "r") as dataset_file:
-            print(dataset_file.keys())
             image_stats = {
                 # have to subtract one because last index contains length of images
                 # dataset
@@ -393,7 +392,8 @@ class TriFingerDatasetEnv(gym.Env):
         # not necessary to understand for users of the class):
         # - observations: Two-dimensional array of shape
         #     `(n_control_timesteps, n_obs)` containing the observations as
-        #     flat vectors of length `n_obs`.
+        #     flat vectors of length `n_obs` (except for the camera images
+        #     which are stored in image_data if present in the dataset).
         # - actions: Two-dimensional array of shape `(n_control_timesteps,
         #     n_actions)` containing the actions.
         # - rewards: One-dimensional array of length `n_control_timesteps`
@@ -404,8 +404,11 @@ class TriFingerDatasetEnv(gym.Env):
         # - image_data: One-dimensional array of dtype "V1", i.e., void of
         #     length one byte, which contains the compressed image data. The
         #     images obtained from all cameras at each camera time step are
-        #     written one after another to this array. The dataset has the
-        #     following attributes:
+        #     written one after another to this array. After decompression
+        #     the color information is contained in a Bayer pattern. The
+        #     images should therefore be debayerd before use. Also note the
+        #     information on the reorder_pixels attribute below. The dataset
+        #     has the following attributes:
         #     - n_cameras: Number of cameras.
         #     - n_channels: Number of channels per camera image.
         #     - compression: Type of compression used. Only "image" is
@@ -414,20 +417,27 @@ class TriFingerDatasetEnv(gym.Env):
         #       "jpeg" and "png" are supported by this class.
         #     - image_shape: Tuple of length 2 containing the height and width
         #       of the images.
-        #     - reorder_pixels: If True, the pixels of the images are
-        #       reordered into blocks corresponding to one color channel.
-        #       Before debayering, the pixels have to be reordered back.
+        #     - reorder_pixels: If true, the pixels of the Bayer pattern have
+        #       been reordered, such that all pixels of a specific colour are
+        #       next to each other in one big block (i.e. one block with all
+        #       red pixels, one with all blue pixels and one with all green
+        #       pixels). This leads to more continuity of the data (compared
+        #       to the original Bayer pattern) and thus tends to improve the
+        #       performance of standard image compression algorithms (e.g.
+        #       PNG). To restore the original image, the pixels need to be
+        #       reordered back before debayering.
         # - image_data_index: One-dimensional array of length
         #     `n_camera_timesteps + 1` containing the indices of the start
         #     of the compressed image data for each camera image in
         #     `image_data`. n_cameras consecutive image indices correspond to
         #     the images of all cameras at one camera time step. The last
-        #     index is the length of `image_data`.
+        #     entry points to len(image_data) and serves as marker for the
+        #     end of the last image.
         # - obs_to_image_index: One-dimensional array of length
         #     `n_control_timesteps` containing the index of the camera
-        #      image corresponding to each control timestep. This mapping
-        #      is necessary because the camera frequency is lower than the
-        #      control frequency.
+        #     image corresponding to each control timestep. This mapping
+        #     is necessary because the camera frequency is lower than the
+        #     control frequency.
 
         if h5path is None:
             h5path = download_dataset(self.dataset_url, self.name)
@@ -525,10 +535,6 @@ class TriFingerDatasetEnv(gym.Env):
                 )
                 images[i] = unique_images[trans_index]
 
-            # TODO: Should we drop this?
-            data_dict["obs_to_image_index"] = obs_to_image_index
-            # TODO: Should we drop this?
-            data_dict["unique_images"] = unique_images
             data_dict["images"] = images
 
         return data_dict
