@@ -1,5 +1,6 @@
 from copy import deepcopy
 import os
+from threading import Thread
 from typing import Union, Tuple, Dict, Optional, List, Any
 import urllib.request
 
@@ -7,7 +8,6 @@ import cv2
 import gymnasium as gym
 import gymnasium.spaces as spaces
 import h5py
-import imagecodecs as ic
 import numpy as np
 from tqdm import tqdm
 
@@ -34,6 +34,86 @@ def download_dataset(urls, name):
             if not os.path.exists(local_path):
                 raise IOError(f"Failed to download dataset from {url}.")
     return local_main_path
+
+
+class ImageLoader(Thread):
+    """Thread for loading and processing images from the dataset.
+
+    This thread is responsible for loading and processing every
+    loader_id-th image. Processing includes decoding, reordering
+    of pixels and debayering."""
+
+    def __init__(self, loader_id, n_loaders, image_data, image_data_index,
+                 unique_images, n_cameras, offset, reorder_pixels):
+        """
+        Args:
+            loader_id: ID of this loader.  This loader will load every
+                loader_id-th image.
+            n_loaders: Total number of loaders.
+            image_data: Numpy array containing the image data.
+            image_data_index: Numpy array containing the indices of the
+                start of the images in the image_data array.
+            unique_images: Numpy array to which the images are written.
+            n_cameras: Number of cameras.
+            offset: Offset compensating for only a part of the image
+                data being loaded from the file.
+            reorder_pixels: Whether to undo the reordering of the pixels
+                which was done during creation of the dataset to improve
+                the image compression."""
+        super().__init__()
+        self.loader_id = loader_id
+        self.n_loaders = n_loaders
+        self.image_data = image_data
+        self.image_data_index = image_data_index
+        self.unique_images = unique_images
+        self.n_unique_images = np.prod(unique_images.shape[0:2])
+        self.n_cameras = n_cameras
+        self.offset = offset
+        self.reorder_pixels = reorder_pixels
+
+    def _reorder_pixels(self, img: np.ndarray) -> np.ndarray:
+        """Undo reordering of Bayer pattern."""
+        new = np.empty_like(img)
+        a = img.shape[0] // 2
+        b = img.shape[1] // 2
+
+        red = img[0:a, 0:b]
+        blue = img[a:, 0:b]
+        green1 = img[0:a, b:]
+        green2 = img[a:, b:]
+
+        new[0::2, 0::2] = red
+        new[1::2, 1::2] = blue
+        new[0::2, 1::2] = green1
+        new[1::2, 0::2] = green2
+
+        return new
+
+    def _decode_image(self, image: np.ndarray) -> np.ndarray:
+        """Decode image from numpy array of type void."""
+        # convert numpy array of type V1 to use with cv2 imdecode
+        image = np.frombuffer(image, dtype=np.uint8)
+        # use cv2 to decode image
+        image = cv2.imdecode(image, cv2.IMREAD_UNCHANGED)
+        return image
+
+    def run(self):
+        # this thread is responsible for every loader_id-th image
+        for i in range(self.loader_id, self.n_unique_images, self.n_loaders):
+            timestep, camera = divmod(i, self.n_cameras)
+            compressed_image = self.image_data[
+                self.image_data_index[i] - self.offset :
+                self.image_data_index[i + 1] - self.offset
+            ]
+            # decode image
+            image = self._decode_image(compressed_image)
+            if self.reorder_pixels:
+                # undo reordering of pixels
+                image = self._reorder_pixels(image)
+            # debayer image (output channels in RGB order)
+            image = cv2.cvtColor(image, cv2.COLOR_BAYER_BG2RGB)
+            # convert to channel first
+            self.unique_images[timestep, camera, ...] = np.transpose(image, (2, 0, 1))
 
 
 class TriFingerDatasetEnv(gym.Env):
@@ -184,34 +264,6 @@ class TriFingerDatasetEnv(gym.Env):
             obs = self._scale_obs(obs)
         return obs
 
-    def _decode_image(self, image: np.ndarray, image_codec: str) -> np.ndarray:
-        """Decode image from numpy array of type void."""
-        image = bytes(image)
-        if image_codec == "png":
-            image = ic.png_decode(image)
-        elif image_codec == "jpeg":
-            image = ic.jpeg_decode(image)
-        else:
-            raise ValueError("Unsupported image codec: {compression}.")
-        return image
-
-    def _reorder_pixels(self, img: np.ndarray) -> np.ndarray:
-        """Undo reordering of Bayer pattern."""
-        new = np.empty_like(img)
-        a = img.shape[0] // 2
-        b = img.shape[1] // 2
-
-        red = img[0:a, 0:b]
-        blue = img[a:, 0:b]
-        green1 = img[0:a, b:]
-        green2 = img[a:, b:]
-
-        new[0::2, 0::2] = red
-        new[1::2, 1::2] = blue
-        new[0::2, 1::2] = green1
-        new[1::2, 0::2] = green2
-
-        return new
 
     def get_obs_indices(self):
         """Get index ranges that correspond to the different observation components.
@@ -257,6 +309,31 @@ class TriFingerDatasetEnv(gym.Env):
 
         return _get_indices_and_shape(dummy_obs, flat_dummy_obs)
 
+    def get_dataset_stats(self, h5path: Union[str, os.PathLike] = None) -> Dict:
+        """Get statistics of dataset such as number of timesteps.
+
+        Args:
+            h5path:  Optional path to a HDF5 file containing the dataset, which will be
+                used instead of the default.
+        Returns:
+            The statistics of the dataset as a dictionary with keys:
+                - n_timesteps: Number of timesteps in dataset. Corresponds to the
+                    number of observations, actions and rewards.
+                - obs_size: Size of the observation vector.
+                - action_size: Size of the action vector.
+        """
+        if h5path is None:
+            h5path = download_dataset(self.dataset_url, self.name)
+
+        with h5py.File(h5path, "r") as dataset_file:
+            n_timesteps = dataset_file["observations"].shape[0]
+            dataset_stats = {
+                "n_timesteps": n_timesteps,
+                "obs_size": dataset_file["observations"].shape[1],
+                "action_size": dataset_file["actions"].shape[1]
+            }
+        return dataset_stats
+
     def get_image_stats(self, h5path: Union[str, os.PathLike] = None) -> Dict:
         """Get statistics of image data in dataset.
 
@@ -289,7 +366,10 @@ class TriFingerDatasetEnv(gym.Env):
         return image_stats
 
     def get_image_data(
-        self, rng: Tuple[int, int], h5path: Union[str, os.PathLike] = None
+        self,
+        rng: Tuple[int, int],
+        h5path: Union[str, os.PathLike] = None,
+        n_threads: int = 8
     ) -> np.ndarray:
         """Get image data from dataset.
 
@@ -310,7 +390,6 @@ class TriFingerDatasetEnv(gym.Env):
         n_cameras = dataset_file["images"].attrs["n_cameras"]
         n_channels = dataset_file["images"].attrs["n_channels"]
         image_shape = tuple(dataset_file["images"].attrs["image_shape"])
-        image_codec = dataset_file["images"].attrs["image_codec"]
         reorder_pixels = dataset_file["images"].attrs["reorder_pixels"]
         compression = dataset_file["images"].attrs["compression"]
         assert compression == "image", "Only image compression is supported."
@@ -330,22 +409,24 @@ class TriFingerDatasetEnv(gym.Env):
             dtype=np.uint8
         )
         offset = image_data_range[0]
-        # TODO: Should we parallelize this?
-        for i in range(n_unique_images):
-            timestep = i // n_cameras
-            camera = i % n_cameras
-            compressed_image = image_data[
-                image_data_index[i] - offset: image_data_index[i + 1] - offset
-            ]
-            # decode image
-            image = self._decode_image(compressed_image, image_codec)
-            if reorder_pixels:
-                # undo reordering of pixels
-                image = self._reorder_pixels(image)
-            # debayer image (output channels in RGB order)
-            image = cv2.cvtColor(image, cv2.COLOR_BAYER_BG2RGB)
-            # convert to channel first
-            unique_images[timestep, camera, ...] = np.transpose(image, (2, 0, 1))
+
+        threads = []
+        # distribute image loading and processing over multiple threads
+        for i in range(n_threads):
+            image_loader = ImageLoader(
+                loader_id=i,
+                n_loaders=n_threads,
+                image_data=image_data,
+                image_data_index=image_data_index,
+                unique_images=unique_images,
+                n_cameras=n_cameras,
+                offset=offset,
+                reorder_pixels=reorder_pixels
+            )
+            threads.append(image_loader)
+            image_loader.start()
+        for thread in threads:
+            thread.join()
 
         return unique_images
 
