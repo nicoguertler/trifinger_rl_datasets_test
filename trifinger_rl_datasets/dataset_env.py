@@ -14,28 +14,6 @@ from tqdm import tqdm
 from .sim_env import SimTriFingerCubeEnv
 
 
-def download_dataset(urls, name):
-    if not isinstance(urls, list):
-        urls = [urls]
-    data_dir = os.path.expanduser("~/.trifinger_rl_datasets")
-    os.makedirs(data_dir, exist_ok=True)
-    print("Downloading dataset files if not already present.")
-    for i, url in tqdm(enumerate(urls)):
-        if i == 0:
-            # first URL is the main dataset
-            local_path = os.path.join(data_dir, name + ".hdf5")
-            local_main_path = local_path
-        else:
-            # additional URLs are for the images
-            local_path = os.path.join(data_dir, name + f"_{i - 1}.hdf5")
-        if not os.path.exists(local_path):
-            print(f'"{url}" to "{local_path}".')
-            urllib.request.urlretrieve(url, local_path)
-            if not os.path.exists(local_path):
-                raise IOError(f"Failed to download dataset from {url}.")
-    return local_main_path
-
-
 class ImageLoader(Thread):
     """Thread for loading and processing images from the dataset.
 
@@ -169,6 +147,7 @@ class TriFingerDatasetEnv(gym.Env):
         # underlying simulated TriFinger environment
         self.sim_env = SimTriFingerCubeEnv(**t_kwargs)
         self._orig_obs_space = self.sim_env.observation_space
+        self._orig_flat_obs_space = spaces.flatten_space(self._orig_obs_space)
 
         self.name = name
         self.dataset_url = dataset_url
@@ -179,6 +158,7 @@ class TriFingerDatasetEnv(gym.Env):
         self.flatten_obs = flatten_obs
         self.scale_obs = scale_obs
         self.set_terminals = set_terminals
+        self._local_dataset_path = None
 
         if scale_obs and not flatten_obs:
             raise NotImplementedError(
@@ -213,6 +193,31 @@ class TriFingerDatasetEnv(gym.Env):
                 )
         else:
             self.observation_space = self._filtered_obs_space
+
+    def _download_dataset(self):
+        """Download dataset files if not already present."""
+        if self._local_dataset_path is None:
+            if not isinstance(self.dataset_url, list):
+                urls = [self.dataset_url]
+            else:
+                urls = self.dataset_url
+            data_dir = os.path.expanduser("~/.trifinger_rl_datasets")
+            os.makedirs(data_dir, exist_ok=True)
+            print("Downloading dataset files if not already present.")
+            for i, url in tqdm(enumerate(urls)):
+                if i == 0:
+                    # first URL is the main dataset
+                    local_path = os.path.join(data_dir, self.name + ".hdf5")
+                    self._local_dataset_path = local_path
+                else:
+                    # additional URLs are for the images
+                    local_path = os.path.join(data_dir, self.name + f"_{i - 1}.hdf5")
+                if not os.path.exists(local_path):
+                    print(f'"{url}" to "{local_path}".')
+                    urllib.request.urlretrieve(url, local_path)
+                    if not os.path.exists(local_path):
+                        raise IOError(f"Failed to download dataset from {url}.")
+        return self._local_dataset_path
 
     def _filter_dict(self, keys_to_keep, d):
         """Keep only a subset of keys in dict.
@@ -323,7 +328,7 @@ class TriFingerDatasetEnv(gym.Env):
                 - action_size: Size of the action vector.
         """
         if h5path is None:
-            h5path = download_dataset(self.dataset_url, self.name)
+            h5path = self._download_dataset()
 
         with h5py.File(h5path, "r") as dataset_file:
             n_timesteps = dataset_file["observations"].shape[0]
@@ -351,7 +356,7 @@ class TriFingerDatasetEnv(gym.Env):
                     together in blocks (to improve image compression).
         """
         if h5path is None:
-            h5path = download_dataset(self.dataset_url, self.name)
+            h5path = self._download_dataset()
 
         with h5py.File(h5path, "r") as dataset_file:
             image_stats = {
@@ -384,7 +389,7 @@ class TriFingerDatasetEnv(gym.Env):
             channels are ordered as RGB.
         """
         if h5path is None:
-            h5path = download_dataset(self.dataset_url, self.name)
+            h5path = self._download_dataset()
         dataset_file = h5py.File(h5path, "r")
 
         n_cameras = dataset_file["images"].attrs["n_cameras"]
@@ -521,7 +526,7 @@ class TriFingerDatasetEnv(gym.Env):
         #     control frequency.
 
         if h5path is None:
-            h5path = download_dataset(self.dataset_url, self.name)
+            h5path = self._download_dataset()
         dataset_file = h5py.File(h5path, "r")
 
         # turn range into slice
@@ -536,7 +541,7 @@ class TriFingerDatasetEnv(gym.Env):
         range_slice = slice(*rng)
 
         data_dict = {}
-        for k in tqdm(self._PRELOAD_KEYS, desc="Loading datafile"):
+        for k in self._PRELOAD_KEYS:
             if k == "episode_ends":
                 data_dict[k] = dataset_file[k][:]
             else:
@@ -546,11 +551,10 @@ class TriFingerDatasetEnv(gym.Env):
 
         # clip to make sure that there are no outliers in the data
         if clip:
-            orig_flat_obs_space = spaces.flatten_space(self._orig_obs_space)
             data_dict["observations"] = data_dict["observations"].clip(
-                min=orig_flat_obs_space.low,
-                max=orig_flat_obs_space.high,
-                dtype=orig_flat_obs_space.dtype,
+                min=self._orig_flat_obs_space.low,
+                max=self._orig_flat_obs_space.high,
+                dtype=self._orig_flat_obs_space.dtype,
             )
 
         if not (self.flatten_obs and self.obs_to_keep is None):
