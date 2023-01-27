@@ -384,6 +384,7 @@ class TriFingerDatasetEnv(gym.Env):
                 indices m to n-1 are returned.
             h5path:  Optional path to a HDF5 file containing the dataset, which will be
                 used instead of the default.
+            n_threads: Number of threads to use for processing the images.
         Returns:
             The image data (or a part of it specified by rng) as a numpy array with the
             shape (n_camera_timesteps, n_cameras, n_channels, height, width). The
@@ -439,7 +440,8 @@ class TriFingerDatasetEnv(gym.Env):
 
     def get_dataset(
         self, h5path: Union[str, os.PathLike] = None, clip: bool = True,
-        rng: Optional[Tuple[int, int]] = None
+        rng: Optional[Tuple[int, int]] = None,
+        n_threads: int = 8
     ) -> Dict[str, Any]:
         """Get the dataset.
 
@@ -454,6 +456,7 @@ class TriFingerDatasetEnv(gym.Env):
             rng:  Optional range to return. rng=(m,n) means that observations, actions
                 and rewards m to n-1 are returned. If not specified, the entire
                 dataset is returned.
+            n_threads: Number of threads to use for processing the images.
         Returns:
             A dictionary with the following items:
                 - observations: Either an array or a list of dictionaries
@@ -610,7 +613,8 @@ class TriFingerDatasetEnv(gym.Env):
             # load images
             unique_images = self.get_image_data(
                 rng=image_index_range,
-                h5path=h5path
+                h5path=h5path,
+                n_threads=n_threads
             )
             # repeat images to account for control frequency > camera frequency
             images = np.zeros(
