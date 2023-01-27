@@ -22,7 +22,8 @@ class ImageLoader(Thread):
     of pixels and debayering."""
 
     def __init__(self, loader_id, n_loaders, image_data, image_data_index,
-                 unique_images, n_cameras, offset, reorder_pixels):
+                 unique_images, n_unique_images, n_cameras, offset,
+                 reorder_pixels):
         """
         Args:
             loader_id: ID of this loader.  This loader will load every
@@ -44,7 +45,7 @@ class ImageLoader(Thread):
         self.image_data = image_data
         self.image_data_index = image_data_index
         self.unique_images = unique_images
-        self.n_unique_images = np.prod(unique_images.shape[0:2])
+        self.n_unique_images = n_unique_images
         self.n_cameras = n_cameras
         self.offset = offset
         self.reorder_pixels = reorder_pixels
@@ -424,6 +425,7 @@ class TriFingerDatasetEnv(gym.Env):
                 image_data=image_data,
                 image_data_index=image_data_index,
                 unique_images=unique_images,
+                n_unique_images=n_unique_images,
                 n_cameras=n_cameras,
                 offset=offset,
                 reorder_pixels=reorder_pixels
