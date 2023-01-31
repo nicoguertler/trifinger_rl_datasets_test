@@ -270,7 +270,6 @@ class TriFingerDatasetEnv(gym.Env):
             obs = self._scale_obs(obs)
         return obs
 
-
     def get_obs_indices(self):
         """Get index ranges that correspond to the different observation components.
 
