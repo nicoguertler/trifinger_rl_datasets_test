@@ -1,5 +1,6 @@
 from copy import deepcopy
 import os
+from pathlib import Path
 from threading import Thread
 from typing import Union, Tuple, Dict, Optional, List, Any
 import urllib.request
@@ -33,6 +34,9 @@ class ImageLoader(Thread):
             image_data_index: Numpy array containing the indices of the
                 start of the images in the image_data array.
             unique_images: Numpy array to which the images are written.
+            n_unique_images: Number of unique images to load. If this
+                number is not divisible by n_cameras,
+                self.unique_images will be padded with zeros.
             n_cameras: Number of cameras.
             offset: Offset compensating for only a part of the image
                 data being loaded from the file.
@@ -202,21 +206,21 @@ class TriFingerDatasetEnv(gym.Env):
                 urls = [self.dataset_url]
             else:
                 urls = self.dataset_url
-            data_dir = os.path.expanduser("~/.trifinger_rl_datasets")
-            os.makedirs(data_dir, exist_ok=True)
+            data_dir = Path("~/.trifinger_rl_datasets").expanduser()
+            data_dir.mkdir(exist_ok=True)
             print("Downloading dataset files if not already present.")
             for i, url in tqdm(enumerate(urls)):
                 if i == 0:
                     # first URL is the main dataset
-                    local_path = os.path.join(data_dir, self.name + ".hdf5")
+                    local_path = data_dir / (self.name + ".hdf5")
                     self._local_dataset_path = local_path
                 else:
                     # additional URLs are for the images
-                    local_path = os.path.join(data_dir, self.name + f"_{i - 1}.hdf5")
-                if not os.path.exists(local_path):
+                    local_path = data_dir / (self.name + f"_{i - 1}.hdf5")
+                if not local_path.exists():
                     print(f'"{url}" to "{local_path}".')
                     urllib.request.urlretrieve(url, local_path)
-                    if not os.path.exists(local_path):
+                    if not local_path.exists():
                         raise IOError(f"Failed to download dataset from {url}.")
         return self._local_dataset_path
 
@@ -374,7 +378,7 @@ class TriFingerDatasetEnv(gym.Env):
         self,
         rng: Tuple[int, int],
         h5path: Union[str, os.PathLike] = None,
-        n_threads: int = 8
+        n_threads: Optional[int] = None
     ) -> np.ndarray:
         """Get image data from dataset.
 
@@ -383,12 +387,16 @@ class TriFingerDatasetEnv(gym.Env):
                 indices m to n-1 are returned.
             h5path:  Optional path to a HDF5 file containing the dataset, which will be
                 used instead of the default.
-            n_threads: Number of threads to use for processing the images.
+            n_threads: Number of threads to use for processing the images. If None,
+                the number of threads is set to the number of CPUs available to the
+                process.
         Returns:
             The image data (or a part of it specified by rng) as a numpy array with the
             shape (n_camera_timesteps, n_cameras, n_channels, height, width). The
             channels are ordered as RGB.
         """
+        if n_threads is None:
+            n_threads = len(os.sched_getaffinity(0))
         if h5path is None:
             h5path = self._download_dataset()
         dataset_file = h5py.File(h5path, "r")
@@ -440,7 +448,7 @@ class TriFingerDatasetEnv(gym.Env):
     def get_dataset(
         self, h5path: Union[str, os.PathLike] = None, clip: bool = True,
         rng: Optional[Tuple[int, int]] = None,
-        n_threads: int = 8
+        n_threads: Optional[int] = None
     ) -> Dict[str, Any]:
         """Get the dataset.
 
@@ -455,7 +463,9 @@ class TriFingerDatasetEnv(gym.Env):
             rng:  Optional range to return. rng=(m,n) means that observations, actions
                 and rewards m to n-1 are returned. If not specified, the entire
                 dataset is returned.
-            n_threads: Number of threads to use for processing the images.
+            n_threads: Number of threads to use for processing the images. If None,
+                the number of threads is set to the number of CPUs available to the
+                process.
         Returns:
             A dictionary with the following items:
                 - observations: Either an array or a list of dictionaries
