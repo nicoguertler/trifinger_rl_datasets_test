@@ -24,7 +24,7 @@ if __name__ == "__main__":
         help="Range of timesteps to load image data for.",
     )
     argparser.add_argument(
-        "--h5path",
+        "--zarr_path",
         type=str,
         default=None,
         help="Path to HDF5 file to load.",
@@ -37,7 +37,7 @@ if __name__ == "__main__":
     )
 
     # load only a subset of obervations, actions and rewards
-    dataset = env.get_dataset(rng=tuple(args.range), h5path=args.h5path)
+    dataset = env.get_dataset(rng=tuple(args.range), zarr_path=args.zarr_path)
 
     n_observations = len(dataset["observations"])
     print("Number of observations: ", n_observations)

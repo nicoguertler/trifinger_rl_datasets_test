@@ -8,9 +8,9 @@ import urllib.request
 import cv2
 import gymnasium as gym
 import gymnasium.spaces as spaces
-import h5py
 import numpy as np
 from tqdm import tqdm
+import zarr
 
 from .sim_env import SimTriFingerCubeEnv
 
@@ -318,11 +318,11 @@ class TriFingerDatasetEnv(gym.Env):
 
         return _get_indices_and_shape(dummy_obs, flat_dummy_obs)
 
-    def get_dataset_stats(self, h5path: Union[str, os.PathLike] = None) -> Dict:
+    def get_dataset_stats(self, zarr_path: Union[str, os.PathLike] = None) -> Dict:
         """Get statistics of dataset such as number of timesteps.
 
         Args:
-            h5path:  Optional path to a HDF5 file containing the dataset, which will be
+            zarr_path:  Optional path to a Zarr directory containing the dataset, which will be
                 used instead of the default.
         Returns:
             The statistics of the dataset as a dictionary with keys:
@@ -331,23 +331,22 @@ class TriFingerDatasetEnv(gym.Env):
                 - obs_size: Size of the observation vector.
                 - action_size: Size of the action vector.
         """
-        if h5path is None:
-            h5path = self._download_dataset()
+        if zarr_path is None:
+            zarr_path = self._download_dataset()
 
-        with h5py.File(h5path, "r") as dataset_file:
-            n_timesteps = dataset_file["observations"].shape[0]
+        with zarr.open(zarr_path, "r") as root:
             dataset_stats = {
-                "n_timesteps": n_timesteps,
-                "obs_size": dataset_file["observations"].shape[1],
-                "action_size": dataset_file["actions"].shape[1]
+                "n_timesteps": root["observations"].shape[0],
+                "obs_size": root["observations"].shape[1],
+                "action_size": root["actions"].shape[1]
             }
         return dataset_stats
 
-    def get_image_stats(self, h5path: Union[str, os.PathLike] = None) -> Dict:
+    def get_image_stats(self, zarr_path: Union[str, os.PathLike] = None) -> Dict:
         """Get statistics of image data in dataset.
 
         Args:
-            h5path:  Optional path to a HDF5 file containing the dataset, which will be
+            zarr_path:  Optional path to a Zarr directory containing the dataset, which will be
                 used instead of the default.
         Returns:
             The statistics of the image data as a dictionary with keys:
@@ -359,25 +358,25 @@ class TriFingerDatasetEnv(gym.Env):
                     to have the pixels corresponding to one color in the Bayer pattern
                     together in blocks (to improve image compression).
         """
-        if h5path is None:
-            h5path = self._download_dataset()
+        if zarr_path is None:
+            zarr_path = self._download_dataset()
 
-        with h5py.File(h5path, "r") as dataset_file:
+        with zarr.open(zarr_path, "r") as root:
             image_stats = {
                 # have to subtract one because last index contains length of images
                 # dataset
-                "n_images": dataset_file["image_data_index"].shape[0] - 1,
-                "n_cameras": dataset_file["images"].attrs["n_cameras"],
-                "n_channels": dataset_file["images"].attrs["n_channels"],
-                "image_shape": tuple(dataset_file["images"].attrs["image_shape"]),
-                "reorder_pixels": dataset_file["images"].attrs["reorder_pixels"],
+                "n_images": root["image_data_index"].shape[0] - 1,
+                "n_cameras": root["images"].attrs["n_cameras"],
+                "n_channels": root["images"].attrs["n_channels"],
+                "image_shape": tuple(root["images"].attrs["image_shape"]),
+                "reorder_pixels": root["images"].attrs["reorder_pixels"],
             }
         return image_stats
 
     def get_image_data(
         self,
         rng: Tuple[int, int],
-        h5path: Union[str, os.PathLike] = None,
+        zarr_path: Union[str, os.PathLike] = None,
         n_threads: Optional[int] = None
     ) -> np.ndarray:
         """Get image data from dataset.
@@ -385,7 +384,7 @@ class TriFingerDatasetEnv(gym.Env):
         Args:
             rng:  Range of images to return. rng=(m,n) means that the images with
                 indices m to n-1 are returned.
-            h5path:  Optional path to a HDF5 file containing the dataset, which will be
+            zarr_path:  Optional path to a Zarr directory containing the dataset, which will be
                 used instead of the default.
             n_threads: Number of threads to use for processing the images. If None,
                 the number of threads is set to the number of CPUs available to the
@@ -397,25 +396,25 @@ class TriFingerDatasetEnv(gym.Env):
         """
         if n_threads is None:
             n_threads = len(os.sched_getaffinity(0))
-        if h5path is None:
-            h5path = self._download_dataset()
-        dataset_file = h5py.File(h5path, "r")
+        if zarr_path is None:
+            zarr_path = self._download_dataset()
+        root = zarr.open(zarr_path, "r")
 
-        n_cameras = dataset_file["images"].attrs["n_cameras"]
-        n_channels = dataset_file["images"].attrs["n_channels"]
-        image_shape = tuple(dataset_file["images"].attrs["image_shape"])
-        reorder_pixels = dataset_file["images"].attrs["reorder_pixels"]
-        compression = dataset_file["images"].attrs["compression"]
+        n_cameras = root["images"].attrs["n_cameras"]
+        n_channels = root["images"].attrs["n_channels"]
+        image_shape = tuple(root["images"].attrs["image_shape"])
+        reorder_pixels = root["images"].attrs["reorder_pixels"]
+        compression = root["images"].attrs["compression"]
         assert compression == "image", "Only image compression is supported."
 
         # mapping from image index to start of compressed image data
         # have to load one additional index to obtain size of last image
-        image_data_index = dataset_file["image_data_index"][
+        image_data_index = root["image_data_index"][
             slice(rng[0], rng[1] + 1)
         ]
         image_data_range = (image_data_index[0], image_data_index[-1])
         # load only relevant image data
-        image_data = dataset_file["images"][slice(*image_data_range)]
+        image_data = root["images"][slice(*image_data_range)]
         n_unique_images = rng[1] - rng[0]
         n_timesteps = int(np.ceil(n_unique_images / n_cameras))
         unique_images = np.zeros(
@@ -446,7 +445,7 @@ class TriFingerDatasetEnv(gym.Env):
         return unique_images
 
     def get_dataset(
-        self, h5path: Union[str, os.PathLike] = None, clip: bool = True,
+        self, zarr_path: Union[str, os.PathLike] = None, clip: bool = True,
         rng: Optional[Tuple[int, int]] = None,
         n_threads: Optional[int] = None
     ) -> Dict[str, Any]:
@@ -456,7 +455,7 @@ class TriFingerDatasetEnv(gym.Env):
         saved to ``~/.trifinger_rl_datasets``.
 
         Args:
-            h5path:  Optional path to a HDF5 file containing the dataset, which will be
+            zarr_path:  Optional path to a Zarr directory containing the dataset, which will be
                 used instead of the default.
             clip:  If True, observations are clipped to be within the environment's
                 observation space.
@@ -487,8 +486,8 @@ class TriFingerDatasetEnv(gym.Env):
                     are ordered as RGB.
         """
 
-        # The offline RL dataset is loaded from a HDF5 file which contains
-        # the following HDF5 datasets (this is an implementation detail and
+        # The offline RL dataset is loaded from a Zarr directory which contains
+        # the following Zarr arrays (this is an implementation detail and
         # not necessary to understand for users of the class):
         # - observations: Two-dimensional array of shape
         #     `(n_control_timesteps, n_obs)` containing the observations as
@@ -539,12 +538,12 @@ class TriFingerDatasetEnv(gym.Env):
         #     is necessary because the camera frequency is lower than the
         #     control frequency.
 
-        if h5path is None:
-            h5path = self._download_dataset()
-        dataset_file = h5py.File(h5path, "r")
+        if zarr_path is None:
+            zarr_path = self._download_dataset()
+        root = zarr.open(zarr_path, "r")
 
         # turn range into slice
-        n_avail_transitions = dataset_file["observations"].shape[0]
+        n_avail_transitions = root["observations"].shape[0]
         if rng is None:
             rng = (None, None)
         rng = (
@@ -557,9 +556,9 @@ class TriFingerDatasetEnv(gym.Env):
         data_dict = {}
         for k in self._PRELOAD_KEYS:
             if k == "episode_ends":
-                data_dict[k] = dataset_file[k][:]
+                data_dict[k] = root[k][:]
             else:
-                data_dict[k] = dataset_file[k][range_slice]
+                data_dict[k] = root[k][range_slice]
 
         n_control_timesteps = data_dict["observations"].shape[0]
 
@@ -609,11 +608,11 @@ class TriFingerDatasetEnv(gym.Env):
                 data_dict["observations"], dtype=self.observation_space.dtype
             )
 
-        if "images" in dataset_file.keys():
+        if "images" in root.keys():
             # mapping from observation index to image index
             # (necessary since the camera frequency < control frequency)
-            obs_to_image_index = dataset_file["obs_to_image_index"][range_slice]
-            n_cameras = dataset_file["images"].attrs["n_cameras"]
+            obs_to_image_index = root["obs_to_image_index"][range_slice]
+            n_cameras = root["images"].attrs["n_cameras"]
             image_index_range = (
                 obs_to_image_index[0],
                 # add n_cameras to include last images as well
@@ -622,7 +621,7 @@ class TriFingerDatasetEnv(gym.Env):
             # load images
             unique_images = self.get_image_data(
                 rng=image_index_range,
-                h5path=h5path,
+                zarr_path=zarr_path,
                 n_threads=n_threads
             )
             # repeat images to account for control frequency > camera frequency
@@ -639,7 +638,7 @@ class TriFingerDatasetEnv(gym.Env):
 
         return data_dict
 
-    def get_dataset_chunk(self, chunk_id, h5path=None):
+    def get_dataset_chunk(self, chunk_id, zarr_path=None):
         raise NotImplementedError()
 
     def compute_reward(

@@ -25,7 +25,7 @@ if __name__ == "__main__":
         help="Number of camera timesteps to load image data for.",
     )
     argparser.add_argument(
-        "--h5path",
+        "--zarr_path",
         type=str,
         default=None,
         help="Path to HDF5 file to load.",
@@ -44,7 +44,7 @@ if __name__ == "__main__":
     )
 
     # get information about image data
-    image_stats = env.get_image_stats(h5path=args.h5path)
+    image_stats = env.get_image_stats(zarr_path=args.zarr_path)
     print("Image dataset:")
     for key, value in image_stats.items():
         print(f"{key}: {value}")
@@ -56,7 +56,7 @@ if __name__ == "__main__":
     images = env.get_image_data(
         # images from 3 cameras for each timestep
         rng=(0, 3 * args.n_timesteps),
-        h5path=args.h5path
+        zarr_path=args.zarr_path
     )
     print(f"Loading took {time() - t0:.3f} seconds.")
 
