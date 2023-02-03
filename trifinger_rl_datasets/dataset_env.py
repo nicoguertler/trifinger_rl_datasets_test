@@ -1,5 +1,6 @@
 from copy import deepcopy
 import os
+from pathlib import Path
 from threading import Thread
 from typing import Union, Tuple, Dict, Optional, List, Any
 import urllib.request
@@ -14,28 +15,6 @@ from tqdm import tqdm
 from .sim_env import SimTriFingerCubeEnv
 
 
-def download_dataset(urls, name):
-    if not isinstance(urls, list):
-        urls = [urls]
-    data_dir = os.path.expanduser("~/.trifinger_rl_datasets")
-    os.makedirs(data_dir, exist_ok=True)
-    print("Downloading dataset files if not already present.")
-    for i, url in tqdm(enumerate(urls)):
-        if i == 0:
-            # first URL is the main dataset
-            local_path = os.path.join(data_dir, name + ".hdf5")
-            local_main_path = local_path
-        else:
-            # additional URLs are for the images
-            local_path = os.path.join(data_dir, name + f"_{i - 1}.hdf5")
-        if not os.path.exists(local_path):
-            print(f'"{url}" to "{local_path}".')
-            urllib.request.urlretrieve(url, local_path)
-            if not os.path.exists(local_path):
-                raise IOError(f"Failed to download dataset from {url}.")
-    return local_main_path
-
-
 class ImageLoader(Thread):
     """Thread for loading and processing images from the dataset.
 
@@ -44,7 +23,8 @@ class ImageLoader(Thread):
     of pixels and debayering."""
 
     def __init__(self, loader_id, n_loaders, image_data, image_data_index,
-                 unique_images, n_cameras, offset, reorder_pixels):
+                 unique_images, n_unique_images, n_cameras, offset,
+                 reorder_pixels):
         """
         Args:
             loader_id: ID of this loader.  This loader will load every
@@ -54,6 +34,9 @@ class ImageLoader(Thread):
             image_data_index: Numpy array containing the indices of the
                 start of the images in the image_data array.
             unique_images: Numpy array to which the images are written.
+            n_unique_images: Number of unique images to load. If this
+                number is not divisible by n_cameras,
+                self.unique_images will be padded with zeros.
             n_cameras: Number of cameras.
             offset: Offset compensating for only a part of the image
                 data being loaded from the file.
@@ -66,7 +49,7 @@ class ImageLoader(Thread):
         self.image_data = image_data
         self.image_data_index = image_data_index
         self.unique_images = unique_images
-        self.n_unique_images = np.prod(unique_images.shape[0:2])
+        self.n_unique_images = n_unique_images
         self.n_cameras = n_cameras
         self.offset = offset
         self.reorder_pixels = reorder_pixels
@@ -169,6 +152,7 @@ class TriFingerDatasetEnv(gym.Env):
         # underlying simulated TriFinger environment
         self.sim_env = SimTriFingerCubeEnv(**t_kwargs)
         self._orig_obs_space = self.sim_env.observation_space
+        self._orig_flat_obs_space = spaces.flatten_space(self._orig_obs_space)
 
         self.name = name
         self.dataset_url = dataset_url
@@ -179,6 +163,7 @@ class TriFingerDatasetEnv(gym.Env):
         self.flatten_obs = flatten_obs
         self.scale_obs = scale_obs
         self.set_terminals = set_terminals
+        self._local_dataset_path = None
 
         if scale_obs and not flatten_obs:
             raise NotImplementedError(
@@ -213,6 +198,31 @@ class TriFingerDatasetEnv(gym.Env):
                 )
         else:
             self.observation_space = self._filtered_obs_space
+
+    def _download_dataset(self):
+        """Download dataset files if not already present."""
+        if self._local_dataset_path is None:
+            if not isinstance(self.dataset_url, list):
+                urls = [self.dataset_url]
+            else:
+                urls = self.dataset_url
+            data_dir = Path("~/.trifinger_rl_datasets").expanduser()
+            data_dir.mkdir(exist_ok=True)
+            print("Downloading dataset files if not already present.")
+            for i, url in tqdm(enumerate(urls)):
+                if i == 0:
+                    # first URL is the main dataset
+                    local_path = data_dir / (self.name + ".hdf5")
+                    self._local_dataset_path = local_path
+                else:
+                    # additional URLs are for the images
+                    local_path = data_dir / (self.name + f"_{i - 1}.hdf5")
+                if not local_path.exists():
+                    print(f'"{url}" to "{local_path}".')
+                    urllib.request.urlretrieve(url, local_path)
+                    if not local_path.exists():
+                        raise IOError(f"Failed to download dataset from {url}.")
+        return self._local_dataset_path
 
     def _filter_dict(self, keys_to_keep, d):
         """Keep only a subset of keys in dict.
@@ -263,7 +273,6 @@ class TriFingerDatasetEnv(gym.Env):
             # scale obs
             obs = self._scale_obs(obs)
         return obs
-
 
     def get_obs_indices(self):
         """Get index ranges that correspond to the different observation components.
@@ -323,7 +332,7 @@ class TriFingerDatasetEnv(gym.Env):
                 - action_size: Size of the action vector.
         """
         if h5path is None:
-            h5path = download_dataset(self.dataset_url, self.name)
+            h5path = self._download_dataset()
 
         with h5py.File(h5path, "r") as dataset_file:
             n_timesteps = dataset_file["observations"].shape[0]
@@ -351,7 +360,7 @@ class TriFingerDatasetEnv(gym.Env):
                     together in blocks (to improve image compression).
         """
         if h5path is None:
-            h5path = download_dataset(self.dataset_url, self.name)
+            h5path = self._download_dataset()
 
         with h5py.File(h5path, "r") as dataset_file:
             image_stats = {
@@ -369,7 +378,7 @@ class TriFingerDatasetEnv(gym.Env):
         self,
         rng: Tuple[int, int],
         h5path: Union[str, os.PathLike] = None,
-        n_threads: int = 8
+        n_threads: Optional[int] = None
     ) -> np.ndarray:
         """Get image data from dataset.
 
@@ -378,13 +387,18 @@ class TriFingerDatasetEnv(gym.Env):
                 indices m to n-1 are returned.
             h5path:  Optional path to a HDF5 file containing the dataset, which will be
                 used instead of the default.
+            n_threads: Number of threads to use for processing the images. If None,
+                the number of threads is set to the number of CPUs available to the
+                process.
         Returns:
             The image data (or a part of it specified by rng) as a numpy array with the
             shape (n_camera_timesteps, n_cameras, n_channels, height, width). The
             channels are ordered as RGB.
         """
+        if n_threads is None:
+            n_threads = len(os.sched_getaffinity(0))
         if h5path is None:
-            h5path = download_dataset(self.dataset_url, self.name)
+            h5path = self._download_dataset()
         dataset_file = h5py.File(h5path, "r")
 
         n_cameras = dataset_file["images"].attrs["n_cameras"]
@@ -419,6 +433,7 @@ class TriFingerDatasetEnv(gym.Env):
                 image_data=image_data,
                 image_data_index=image_data_index,
                 unique_images=unique_images,
+                n_unique_images=n_unique_images,
                 n_cameras=n_cameras,
                 offset=offset,
                 reorder_pixels=reorder_pixels
@@ -432,7 +447,8 @@ class TriFingerDatasetEnv(gym.Env):
 
     def get_dataset(
         self, h5path: Union[str, os.PathLike] = None, clip: bool = True,
-        rng: Optional[Tuple[int, int]] = None
+        rng: Optional[Tuple[int, int]] = None,
+        n_threads: Optional[int] = None
     ) -> Dict[str, Any]:
         """Get the dataset.
 
@@ -447,6 +463,9 @@ class TriFingerDatasetEnv(gym.Env):
             rng:  Optional range to return. rng=(m,n) means that observations, actions
                 and rewards m to n-1 are returned. If not specified, the entire
                 dataset is returned.
+            n_threads: Number of threads to use for processing the images. If None,
+                the number of threads is set to the number of CPUs available to the
+                process.
         Returns:
             A dictionary with the following items:
                 - observations: Either an array or a list of dictionaries
@@ -521,7 +540,7 @@ class TriFingerDatasetEnv(gym.Env):
         #     control frequency.
 
         if h5path is None:
-            h5path = download_dataset(self.dataset_url, self.name)
+            h5path = self._download_dataset()
         dataset_file = h5py.File(h5path, "r")
 
         # turn range into slice
@@ -536,7 +555,7 @@ class TriFingerDatasetEnv(gym.Env):
         range_slice = slice(*rng)
 
         data_dict = {}
-        for k in tqdm(self._PRELOAD_KEYS, desc="Loading datafile"):
+        for k in self._PRELOAD_KEYS:
             if k == "episode_ends":
                 data_dict[k] = dataset_file[k][:]
             else:
@@ -546,11 +565,10 @@ class TriFingerDatasetEnv(gym.Env):
 
         # clip to make sure that there are no outliers in the data
         if clip:
-            orig_flat_obs_space = spaces.flatten_space(self._orig_obs_space)
             data_dict["observations"] = data_dict["observations"].clip(
-                min=orig_flat_obs_space.low,
-                max=orig_flat_obs_space.high,
-                dtype=orig_flat_obs_space.dtype,
+                min=self._orig_flat_obs_space.low,
+                max=self._orig_flat_obs_space.high,
+                dtype=self._orig_flat_obs_space.dtype,
             )
 
         if not (self.flatten_obs and self.obs_to_keep is None):
@@ -604,7 +622,8 @@ class TriFingerDatasetEnv(gym.Env):
             # load images
             unique_images = self.get_image_data(
                 rng=image_index_range,
-                h5path=h5path
+                h5path=h5path,
+                n_threads=n_threads
             )
             # repeat images to account for control frequency > camera frequency
             images = np.zeros(
