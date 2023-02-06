@@ -22,24 +22,19 @@ class ImageLoader(Thread):
     loader_id-th image. Processing includes decoding, reordering
     of pixels and debayering."""
 
-    def __init__(self, loader_id, n_loaders, image_data, image_data_index,
-                 unique_images, n_unique_images, n_cameras, offset,
-                 reorder_pixels):
+    def __init__(self, loader_id, n_loaders, image_data, unique_images,
+                n_unique_images, n_cameras, reorder_pixels):
         """
         Args:
             loader_id: ID of this loader.  This loader will load every
                 loader_id-th image.
             n_loaders: Total number of loaders.
             image_data: Numpy array containing the image data.
-            image_data_index: Numpy array containing the indices of the
-                start of the images in the image_data array.
             unique_images: Numpy array to which the images are written.
             n_unique_images: Number of unique images to load. If this
                 number is not divisible by n_cameras,
                 self.unique_images will be padded with zeros.
             n_cameras: Number of cameras.
-            offset: Offset compensating for only a part of the image
-                data being loaded from the file.
             reorder_pixels: Whether to undo the reordering of the pixels
                 which was done during creation of the dataset to improve
                 the image compression."""
@@ -47,11 +42,9 @@ class ImageLoader(Thread):
         self.loader_id = loader_id
         self.n_loaders = n_loaders
         self.image_data = image_data
-        self.image_data_index = image_data_index
         self.unique_images = unique_images
         self.n_unique_images = n_unique_images
         self.n_cameras = n_cameras
-        self.offset = offset
         self.reorder_pixels = reorder_pixels
 
     def _reorder_pixels(self, img: np.ndarray) -> np.ndarray:
@@ -84,10 +77,7 @@ class ImageLoader(Thread):
         # this thread is responsible for every loader_id-th image
         for i in range(self.loader_id, self.n_unique_images, self.n_loaders):
             timestep, camera = divmod(i, self.n_cameras)
-            compressed_image = self.image_data[
-                self.image_data_index[i] - self.offset :
-                self.image_data_index[i + 1] - self.offset
-            ]
+            compressed_image = self.image_data[i]
             # decode image
             image = self._decode_image(compressed_image)
             if self.reorder_pixels:
@@ -105,7 +95,8 @@ class TriFingerDatasetEnv(gym.Env):
     Similar to D4RL's OfflineEnv but with different data loading and
     options for customization of observation space."""
 
-    _PRELOAD_KEYS = ["observations", "actions", "rewards", "episode_ends"]
+    _PRELOAD_VECTOR_KEYS = ["observations", "actions"]
+    _PRELOAD_SCALAR_KEYS = ["rewards", "timeouts"]
 
     def __init__(
         self,
@@ -334,7 +325,8 @@ class TriFingerDatasetEnv(gym.Env):
         if zarr_path is None:
             zarr_path = self._download_dataset()
 
-        with zarr.open(zarr_path, "r") as root:
+        store = zarr.LMDBStore(zarr_path, readonly=True)
+        with zarr.open(store=store) as root:
             dataset_stats = {
                 "n_timesteps": root["observations"].shape[0],
                 "obs_size": root["observations"].shape[1],
@@ -361,11 +353,12 @@ class TriFingerDatasetEnv(gym.Env):
         if zarr_path is None:
             zarr_path = self._download_dataset()
 
-        with zarr.open(zarr_path, "r") as root:
+        store = zarr.LMDBStore(zarr_path, readonly=True)
+        with zarr.open(store=store) as root:
             image_stats = {
                 # have to subtract one because last index contains length of images
                 # dataset
-                "n_images": root["image_data_index"].shape[0] - 1,
+                "n_images": root["images"].shape[0] - 1,
                 "n_cameras": root["images"].attrs["n_cameras"],
                 "n_channels": root["images"].attrs["n_channels"],
                 "image_shape": tuple(root["images"].attrs["image_shape"]),
@@ -375,15 +368,18 @@ class TriFingerDatasetEnv(gym.Env):
 
     def get_image_data(
         self,
-        rng: Tuple[int, int],
+        rng: Optional[Tuple[int, int]] = None,
+        indices: Optional[np.ndarray] = None,
         zarr_path: Union[str, os.PathLike] = None,
         n_threads: Optional[int] = None
     ) -> np.ndarray:
         """Get image data from dataset.
 
         Args:
-            rng:  Range of images to return. rng=(m,n) means that the images with
+            rng: Optional range of images to return. rng=(m,n) means that the images with
                 indices m to n-1 are returned.
+            indices: Optional array of image indices for which to load data. rng
+                and indices are mutually exclusive, only one of them can be set.
             zarr_path:  Optional path to a Zarr directory containing the dataset, which will be
                 used instead of the default.
             n_threads: Number of threads to use for processing the images. If None,
@@ -392,13 +388,19 @@ class TriFingerDatasetEnv(gym.Env):
         Returns:
             The image data (or a part of it specified by rng) as a numpy array with the
             shape (n_camera_timesteps, n_cameras, n_channels, height, width). The
-            channels are ordered as RGB.
+            channels are ordered as RGB. This shape is based on the assumption that
+            for a given camera timestep, the images of either all or none of the
+            cameras are contained in rng or indices. If this assumption is violated,
+            the first dimension will not correspond to camera timesteps anymore.
         """
+        assert rng is None or indices is None, ("rng and indices cannot be"
+                                                "specified at the same time.")
         if n_threads is None:
             n_threads = len(os.sched_getaffinity(0))
         if zarr_path is None:
             zarr_path = self._download_dataset()
-        root = zarr.open(zarr_path, "r")
+        store = zarr.LMDBStore(zarr_path, readonly=True)
+        root = zarr.open(store=store)
 
         n_cameras = root["images"].attrs["n_cameras"]
         n_channels = root["images"].attrs["n_channels"]
@@ -407,21 +409,17 @@ class TriFingerDatasetEnv(gym.Env):
         compression = root["images"].attrs["compression"]
         assert compression == "image", "Only image compression is supported."
 
-        # mapping from image index to start of compressed image data
-        # have to load one additional index to obtain size of last image
-        image_data_index = root["image_data_index"][
-            slice(rng[0], rng[1] + 1)
-        ]
-        image_data_range = (image_data_index[0], image_data_index[-1])
         # load only relevant image data
-        image_data = root["images"][slice(*image_data_range)]
-        n_unique_images = rng[1] - rng[0]
+        if indices is not None:
+            image_data = root["images"].get_orthogonal_selection(indices)
+        else:
+            image_data = root["images"][slice(*rng)]
+        n_unique_images = image_data.shape[0]
         n_timesteps = int(np.ceil(n_unique_images / n_cameras))
         unique_images = np.zeros(
             (n_timesteps, n_cameras, n_channels) + image_shape,
             dtype=np.uint8
         )
-        offset = image_data_range[0]
 
         threads = []
         # distribute image loading and processing over multiple threads
@@ -430,11 +428,9 @@ class TriFingerDatasetEnv(gym.Env):
                 loader_id=i,
                 n_loaders=n_threads,
                 image_data=image_data,
-                image_data_index=image_data_index,
                 unique_images=unique_images,
                 n_unique_images=n_unique_images,
                 n_cameras=n_cameras,
-                offset=offset,
                 reorder_pixels=reorder_pixels
             )
             threads.append(image_loader)
@@ -447,6 +443,7 @@ class TriFingerDatasetEnv(gym.Env):
     def get_dataset(
         self, zarr_path: Union[str, os.PathLike] = None, clip: bool = True,
         rng: Optional[Tuple[int, int]] = None,
+        indices: Optional[np.ndarray] = None,
         n_threads: Optional[int] = None
     ) -> Dict[str, Any]:
         """Get the dataset.
@@ -462,6 +459,8 @@ class TriFingerDatasetEnv(gym.Env):
             rng:  Optional range to return. rng=(m,n) means that observations, actions
                 and rewards m to n-1 are returned. If not specified, the entire
                 dataset is returned.
+            indices: Optional array of timestep indices for which to load data. rng
+                and indices are mutually exclusive, only one of them can be set.
             n_threads: Number of threads to use for processing the images. If None,
                 the number of threads is set to the number of CPUs available to the
                 process.
@@ -478,8 +477,6 @@ class TriFingerDatasetEnv(gym.Env):
                 - terminals: Array containing the terminals (Always
                     False by default. If `set_terminals` is True, only
                     True at the last timestep of an episode).
-                - episode_ends: Array containing the indices of the last
-                    timestep of each episode.
                 - image_data (only if present in dataset): Array of the
                     shape (n_control_timesteps, n_cameras, n_channels,
                     height, width) containing the image data. The cannels
@@ -500,14 +497,13 @@ class TriFingerDatasetEnv(gym.Env):
         # - episode_ends: One-dimensional array of length `n_episodes`
         #     containing the indices of the last control timestep of each
         #     episode.
-        # - image_data: One-dimensional array of dtype "V1", i.e., void of
-        #     length one byte, which contains the compressed image data. The
-        #     images obtained from all cameras at each camera time step are
-        #     written one after another to this array. After decompression
-        #     the color information is contained in a Bayer pattern. The
-        #     images should therefore be debayerd before use. Also note the
-        #     information on the reorder_pixels attribute below. The dataset
-        #     has the following attributes:
+        # - image_data: Ragged array of type bytes, which contains the
+        #     compressed image data. The images obtained from all cameras
+        #     at each camera time step are written one after another to this
+        #     array. After decompression the color information is contained
+        #     in a Bayer pattern. The images should therefore be debayerd
+        #     before use. Also note the information on the reorder_pixels
+        #     attribute below. The dataset has the following attributes:
         #     - n_cameras: Number of cameras.
         #     - n_channels: Number of channels per camera image.
         #     - compression: Type of compression used. Only "image" is
@@ -525,40 +521,39 @@ class TriFingerDatasetEnv(gym.Env):
         #       performance of standard image compression algorithms (e.g.
         #       PNG). To restore the original image, the pixels need to be
         #       reordered back before debayering.
-        # - image_data_index: One-dimensional array of length
-        #     `n_camera_timesteps + 1` containing the indices of the start
-        #     of the compressed image data for each camera image in
-        #     `image_data`. n_cameras consecutive image indices correspond to
-        #     the images of all cameras at one camera time step. The last
-        #     entry points to len(image_data) and serves as marker for the
-        #     end of the last image.
         # - obs_to_image_index: One-dimensional array of length
         #     `n_control_timesteps` containing the index of the camera
         #     image corresponding to each control timestep. This mapping
         #     is necessary because the camera frequency is lower than the
         #     control frequency.
 
+        assert rng is None or indices is None, ("A range and indices to load cannot"
+                                                "be specified at the same time.")
+
         if zarr_path is None:
             zarr_path = self._download_dataset()
-        root = zarr.open(zarr_path, "r")
-
-        # turn range into slice
-        n_avail_transitions = root["observations"].shape[0]
-        if rng is None:
-            rng = (None, None)
-        rng = (
-            0 if rng[0] is None else rng[0],
-            n_avail_transitions if rng[1] is None else rng[1]
-
-        )
-        range_slice = slice(*rng)
+        store = zarr.LMDBStore(zarr_path, readonly=True)
+        root = zarr.open(store=store)
 
         data_dict = {}
-        for k in self._PRELOAD_KEYS:
-            if k == "episode_ends":
-                data_dict[k] = root[k][:]
-            else:
+        if indices is None:
+            # turn range into slice
+            n_avail_transitions = root["observations"].shape[0]
+            if rng is None:
+                rng = (None, None)
+            rng = (
+                0 if rng[0] is None else rng[0],
+                n_avail_transitions if rng[1] is None else rng[1]
+
+            )
+            range_slice = slice(*rng)
+            for k in self._PRELOAD_VECTOR_KEYS + self._PRELOAD_SCALAR_KEYS:
                 data_dict[k] = root[k][range_slice]
+        else:
+            for k in self._PRELOAD_VECTOR_KEYS:
+                data_dict[k] = root[k].get_orthogonal_selection((indices, slice(None)))
+            for k in self._PRELOAD_SCALAR_KEYS:
+                data_dict[k] = root[k].get_coordinate_selection(indices)
 
         n_control_timesteps = data_dict["observations"].shape[0]
 
@@ -581,20 +576,9 @@ class TriFingerDatasetEnv(gym.Env):
             data_dict["observations"] = unflattened_obs
 
         # timeouts, terminals and info
-        episode_ends = data_dict["episode_ends"]
-        # Filter episode_ends for entries which are between trans_range[0]
-        # and trans_range[1] and make use of episode_ends being sorted.
-        start_index = np.searchsorted(episode_ends, rng[0], side="left")
-        end_index = np.searchsorted(episode_ends, rng[1], side="left")
-        episode_ends = episode_ends[start_index:end_index]
-        episode_ends = episode_ends - rng[0]
-        data_dict["episode_ends"] = episode_ends
-        data_dict["timeouts"] = np.zeros(n_control_timesteps, dtype=bool)
-        if not self.set_terminals:
-            data_dict["timeouts"][episode_ends] = True
-        data_dict["terminals"] = np.zeros(n_control_timesteps, dtype=bool)
         if self.set_terminals:
-            data_dict["terminals"][episode_ends] = True
+            data_dict["terminals"] = data_dict["timeouts"]
+            data_dict["timeouts"] = np.zeros(n_control_timesteps, dtype=bool)
         data_dict["infos"] = [{} for _ in range(n_control_timesteps)]
 
         # process obs (filtering, flattening, scaling)
@@ -609,31 +593,56 @@ class TriFingerDatasetEnv(gym.Env):
             )
 
         if "images" in root.keys():
-            # mapping from observation index to image index
-            # (necessary since the camera frequency < control frequency)
-            obs_to_image_index = root["obs_to_image_index"][range_slice]
             n_cameras = root["images"].attrs["n_cameras"]
-            image_index_range = (
-                obs_to_image_index[0],
-                # add n_cameras to include last images as well
-                obs_to_image_index[-1] + n_cameras
-            )
-            # load images
-            unique_images = self.get_image_data(
-                rng=image_index_range,
-                zarr_path=zarr_path,
-                n_threads=n_threads
-            )
+            if indices is None:
+                # mapping from observation index to image index
+                # (necessary since the camera frequency < control frequency)
+                obs_to_image_index = root["obs_to_image_index"][range_slice]
+                image_index_range = (
+                    obs_to_image_index[0],
+                    # add n_cameras to include last images as well
+                    obs_to_image_index[-1] + n_cameras
+                )
+                # load images
+                unique_images = self.get_image_data(
+                    rng=image_index_range,
+                    zarr_path=zarr_path,
+                    n_threads=n_threads
+                )
+            else:
+                obs_to_image_index = root["obs_to_image_index"].get_coordinate_selection(
+                    indices
+                )
+                # load images from all cameras, not only first one
+                all_cam_indices = np.zeros(
+                    obs_to_image_index.shape[0] * n_cameras, dtype=np.int64
+                )
+                for i in range(n_cameras):
+                    all_cam_indices[i::n_cameras] = obs_to_image_index + i
+                # remove duplicates and sort
+                image_indices, unique_to_original = np.unique(
+                    all_cam_indices,
+                    return_inverse=True
+                )
+                # load images
+                unique_images = self.get_image_data(
+                    indices=image_indices,
+                    zarr_path=zarr_path,
+                    n_threads=n_threads
+                )
             # repeat images to account for control frequency > camera frequency
             images = np.zeros(
                 (n_control_timesteps, ) + unique_images.shape[1:], dtype=np.uint8
             )
             for i in range(n_control_timesteps):
-                trans_index = (
-                    (obs_to_image_index[i] - obs_to_image_index[0]) // n_cameras
-                )
-                images[i] = unique_images[trans_index]
-
+                if indices is None:
+                    index = (
+                        (obs_to_image_index[i] - obs_to_image_index[0]) // n_cameras
+                    )
+                else:
+                    # map from original image index to unique image index
+                    index = unique_to_original[i * n_cameras] // n_cameras
+                images[i] = unique_images[index]
             data_dict["images"] = images
 
         return data_dict
