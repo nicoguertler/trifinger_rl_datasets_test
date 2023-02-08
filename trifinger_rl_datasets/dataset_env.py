@@ -346,9 +346,7 @@ class TriFingerDatasetEnv(gym.Env):
         store = zarr.LMDBStore(zarr_path, readonly=True)
         with zarr.open(store=store) as root:
             image_stats = {
-                # have to subtract one because last index contains length of images
-                # dataset
-                "n_images": root["images"].shape[0] - 1,
+                "n_images": root["images"].shape[0],
                 "n_cameras": root["images"].attrs["n_cameras"],
                 "n_channels": root["images"].attrs["n_channels"],
                 "image_shape": tuple(root["images"].attrs["image_shape"]),
