@@ -485,6 +485,9 @@ class TriFingerDatasetEnv(gym.Env):
         # - episode_ends: One-dimensional array of length `n_episodes`
         #     containing the indices of the last control timestep of each
         #     episode.
+        # - timeouts: One-dimensional array of length `n_control_timesteps`
+        #     with values of type bool. Only True at timesteps where the
+        #     episode ends, False otherwise.
         # - image_data: Ragged array of type bytes, which contains the
         #     compressed image data. The images obtained from all cameras
         #     at each camera time step are written one after another to this
