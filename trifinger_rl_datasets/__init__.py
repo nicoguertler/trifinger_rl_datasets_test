@@ -65,7 +65,7 @@ dataset_params = [
     {
         "name": "trifinger-cube-push-real-expert-image-mini-v0",
         "dataset_url": (
-            "https://keeper.mpdl.mpg.de/f/644d32d6b93241b29e0b/?dl=1"
+            "https://keeper.mpdl.mpg.de/f/3cf987595fdc4522a644/?dl=1"
         ),
         "ref_min_score": 0.0,
         "ref_max_score": 1.0 * 15000 / 20,

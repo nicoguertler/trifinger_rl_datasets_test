@@ -193,26 +193,16 @@ class TriFingerDatasetEnv(gym.Env):
     def _download_dataset(self):
         """Download dataset files if not already present."""
         if self._local_dataset_path is None:
-            if not isinstance(self.dataset_url, list):
-                urls = [self.dataset_url]
-            else:
-                urls = self.dataset_url
             data_dir = Path("~/.trifinger_rl_datasets").expanduser()
-            data_dir.mkdir(exist_ok=True)
-            print("Downloading dataset files if not already present.")
-            for i, url in tqdm(enumerate(urls)):
-                if i == 0:
-                    # first URL is the main dataset
-                    local_path = data_dir / (self.name + ".hdf5")
-                    self._local_dataset_path = local_path
-                else:
-                    # additional URLs are for the images
-                    local_path = data_dir / (self.name + f"_{i - 1}.hdf5")
+            dataset_dir = data_dir / self.name
+            dataset_dir.mkdir(exist_ok=True, parents=True )
+            local_path= dataset_dir / "data.mdb"
+            if not local_path.exists():
+                print(f"Downloading dataset {self.name}.")
+                urllib.request.urlretrieve(self.dataset_url, local_path)
                 if not local_path.exists():
-                    print(f'"{url}" to "{local_path}".')
-                    urllib.request.urlretrieve(url, local_path)
-                    if not local_path.exists():
-                        raise IOError(f"Failed to download dataset from {url}.")
+                    raise IOError(f"Failed to download dataset from {self.dataset_url}.")
+            self._local_dataset_path = dataset_dir
         return self._local_dataset_path
 
     def _filter_dict(self, keys_to_keep, d):
