@@ -399,8 +399,9 @@ class TriFingerDatasetEnv(gym.Env):
             (n_camera_timesteps, n_cameras, n_channels, height, width) else
             (n_images, n_channels, height, width). The channels are ordered as RGB.
         """
-        assert rng is None or indices is None, ("rng and indices cannot be"
-                                                "specified at the same time.")
+        if rng is not None and indices is not None:
+            raise ValueError("rng and indices cannot be specified at the same time.")
+
         if n_threads is None:
             n_threads = len(os.sched_getaffinity(0))
         if zarr_path is None:
@@ -538,8 +539,8 @@ class TriFingerDatasetEnv(gym.Env):
         #     is necessary because the camera frequency is lower than the
         #     control frequency.
 
-        assert rng is None or indices is None, ("A range and indices to load cannot"
-                                                "be specified at the same time.")
+        if rng is not None and indices is not None:
+            raise ValueError("rng and indices cannot be specified at the same time.")
 
         if zarr_path is None:
             zarr_path = self._download_dataset()
