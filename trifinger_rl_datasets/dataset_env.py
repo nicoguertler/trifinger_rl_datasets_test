@@ -9,7 +9,6 @@ import cv2
 import gymnasium as gym
 import gymnasium.spaces as spaces
 import numpy as np
-from tqdm import tqdm
 import zarr
 
 from .sim_env import SimTriFingerCubeEnv
@@ -23,7 +22,7 @@ class ImageLoader(Thread):
     of pixels and debayering."""
 
     def __init__(self, loader_id, n_loaders, image_data, unique_images,
-                n_unique_images, n_cameras, reorder_pixels):
+                 n_unique_images, n_cameras, reorder_pixels):
         """
         Args:
             loader_id: ID of this loader.  This loader will load every
@@ -195,7 +194,7 @@ class TriFingerDatasetEnv(gym.Env):
         if self._local_dataset_path is None:
             data_dir = Path("~/.trifinger_rl_datasets").expanduser()
             dataset_dir = data_dir / self.name
-            dataset_dir.mkdir(exist_ok=True, parents=True )
+            dataset_dir.mkdir(exist_ok=True, parents=True)
             local_path= dataset_dir / "data.mdb"
             if not local_path.exists():
                 print(f"Downloading dataset {self.name}.")

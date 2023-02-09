@@ -24,7 +24,7 @@ if __name__ == "__main__":
         help="Range of timesteps to load image data for.",
     )
     argparser.add_argument(
-        "--zarr_path",
+        "--zarr-path",
         type=str,
         default=None,
         help="Path to HDF5 file to load.",
