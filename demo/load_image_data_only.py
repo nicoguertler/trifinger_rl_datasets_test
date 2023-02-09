@@ -9,7 +9,8 @@ import numpy as np
 
 import trifinger_rl_datasets  # noqa
 
-def show_images(image_data, no_timestep_dimension):
+
+def show_images(image_data, timestep_dimension):
     """Show loaded images.
 
     Args:
@@ -19,21 +20,21 @@ def show_images(image_data, no_timestep_dimension):
             Otherwise, the first dimension is assumed to correspond to
             images."""
 
-    if args.no_timestep_dimension:
-        n_images, n_channels, height, width = images.shape
-        output_image = np.zeros(
-            (height, n_images* width, n_channels),
-            dtype=np.uint8
-        )
-    else:
+    if timestep_dimension:
         n_timesteps, n_cameras, n_channels, height, width = images.shape
         output_image = np.zeros(
             (n_cameras * height, n_timesteps * width, n_channels),
             dtype=np.uint8
         )
+    else:
+        n_images, n_channels, height, width = images.shape
+        output_image = np.zeros(
+            (height, n_images * width, n_channels),
+            dtype=np.uint8
+        )
     # loop over tuples containing images from all cameras at one timestep
     for i, image_s in enumerate(images):
-        if not args.no_timestep_dimension:
+        if timestep_dimension:
             # concatenate images from all cameras along the height axis
             image_s = np.concatenate(image_s, axis=1)
         # change to (height, width, channels) format for cv2
@@ -78,7 +79,8 @@ if __name__ == "__main__":
     )
     argparser.add_argument(
         "--no-timestep-dimension",
-        action="store_true",
+        dest="timestep_dimension",
+        action="store_false",
         help="Do not include the timestep dimension in the output array."
     )
     args = argparser.parse_args()
@@ -103,11 +105,10 @@ if __name__ == "__main__":
         # images from 3 cameras for each timestep
         rng=(0, 3 * args.n_timesteps),
         zarr_path=args.zarr_path,
-        timestep_dimension=not args.no_timestep_dimension
+        timestep_dimension=args.timestep_dimension
     )
     print(f"Loading took {time() - t0:.3f} seconds.")
 
     # show images
     if not args.do_not_show_images:
-        show_images(images, args.no_timestep_dimension)
-
+        show_images(images, args.timestep_dimension)
