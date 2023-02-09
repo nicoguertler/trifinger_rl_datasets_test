@@ -22,7 +22,8 @@ class ImageLoader(Thread):
     of pixels and debayering."""
 
     def __init__(self, loader_id, n_loaders, image_data, unique_images,
-                 n_unique_images, n_cameras, reorder_pixels):
+                 n_unique_images, n_cameras, reorder_pixels,
+                 timestep_dimension):
         """
         Args:
             loader_id: ID of this loader.  This loader will load every
@@ -36,7 +37,13 @@ class ImageLoader(Thread):
             n_cameras: Number of cameras.
             reorder_pixels: Whether to undo the reordering of the pixels
                 which was done during creation of the dataset to improve
-                the image compression."""
+                the image compression.
+            timestep_dimension: If True, the image data is expected to
+                contain images from all cameras in a row and
+                n_unique_images is expected to have shape
+                (n_timesteps, n_cameras, height, width). If False, the
+                shape is expected to be
+                (n_unique_images, n_cameras, height, width)."""
         super().__init__()
         self.loader_id = loader_id
         self.n_loaders = n_loaders
@@ -45,6 +52,7 @@ class ImageLoader(Thread):
         self.n_unique_images = n_unique_images
         self.n_cameras = n_cameras
         self.reorder_pixels = reorder_pixels
+        self.timestep_dimension = timestep_dimension
 
     def _reorder_pixels(self, img: np.ndarray) -> np.ndarray:
         """Undo reordering of Bayer pattern."""
@@ -75,7 +83,8 @@ class ImageLoader(Thread):
     def run(self):
         # this thread is responsible for every loader_id-th image
         for i in range(self.loader_id, self.n_unique_images, self.n_loaders):
-            timestep, camera = divmod(i, self.n_cameras)
+            if self.timestep_dimension:
+                timestep, camera = divmod(i, self.n_cameras)
             compressed_image = self.image_data[i]
             # decode image
             image = self._decode_image(compressed_image)
@@ -85,7 +94,11 @@ class ImageLoader(Thread):
             # debayer image (output channels in RGB order)
             image = cv2.cvtColor(image, cv2.COLOR_BAYER_BG2RGB)
             # convert to channel first
-            self.unique_images[timestep, camera, ...] = np.transpose(image, (2, 0, 1))
+            image = np.transpose(image, (2, 0, 1))
+            if self.timestep_dimension:
+                self.unique_images[timestep, camera, ...] = image
+            else:
+                self.unique_images[i, ...] = image
 
 
 class TriFingerDatasetEnv(gym.Env):
@@ -358,27 +371,33 @@ class TriFingerDatasetEnv(gym.Env):
         rng: Optional[Tuple[int, int]] = None,
         indices: Optional[np.ndarray] = None,
         zarr_path: Union[str, os.PathLike] = None,
+        timestep_dimension: bool = True,
         n_threads: Optional[int] = None
     ) -> np.ndarray:
         """Get image data from dataset.
 
         Args:
-            rng: Optional range of images to return. rng=(m,n) means that the images with
-                indices m to n-1 are returned.
+            rng: Optional range of images to return. rng=(m,n) means that the
+                images with indices m to n-1 are returned.
             indices: Optional array of image indices for which to load data. rng
                 and indices are mutually exclusive, only one of them can be set.
-            zarr_path:  Optional path to a Zarr directory containing the dataset, which will be
-                used instead of the default.
+            zarr_path:  Optional path to a Zarr directory containing the dataset,
+                which will be used instead of the default.
+            timestep_dimension: Whether to include the timestep dimension in the
+                returned array. This is useful if the given range or indices
+                always contains `n_cameras` of image indices in a row which
+                correspond to the camera images at one camera timestep.
+            cameras are contained in rng or indices. If this assumption is violated,
+            the first dimension will not correspond to camera timesteps anymore.
+
             n_threads: Number of threads to use for processing the images. If None,
                 the number of threads is set to the number of CPUs available to the
                 process.
         Returns:
-            The image data (or a part of it specified by rng) as a numpy array with the
-            shape (n_camera_timesteps, n_cameras, n_channels, height, width). The
-            channels are ordered as RGB. This shape is based on the assumption that
-            for a given camera timestep, the images of either all or none of the
-            cameras are contained in rng or indices. If this assumption is violated,
-            the first dimension will not correspond to camera timesteps anymore.
+            The image data (or a part of it specified by rng or indices) as a numpy
+            array. If `timestep_dimension` is True the shape will be
+            (n_camera_timesteps, n_cameras, n_channels, height, width) else
+            (n_images, n_channels, height, width). The channels are ordered as RGB.
         """
         assert rng is None or indices is None, ("rng and indices cannot be"
                                                 "specified at the same time.")
@@ -402,11 +421,12 @@ class TriFingerDatasetEnv(gym.Env):
         else:
             image_data = root["images"][slice(*rng)]
         n_unique_images = image_data.shape[0]
-        n_timesteps = int(np.ceil(n_unique_images / n_cameras))
-        unique_images = np.zeros(
-            (n_timesteps, n_cameras, n_channels) + image_shape,
-            dtype=np.uint8
-        )
+        if timestep_dimension:
+            n_timesteps = int(np.ceil(n_unique_images / n_cameras))
+            out_shape = (n_timesteps, n_cameras, n_channels) + image_shape
+        else:
+            out_shape = (n_unique_images, n_channels) + image_shape
+        unique_images = np.zeros(out_shape, dtype=np.uint8)
 
         threads = []
         # distribute image loading and processing over multiple threads
@@ -418,7 +438,8 @@ class TriFingerDatasetEnv(gym.Env):
                 unique_images=unique_images,
                 n_unique_images=n_unique_images,
                 n_cameras=n_cameras,
-                reorder_pixels=reorder_pixels
+                reorder_pixels=reorder_pixels,
+                timestep_dimension=timestep_dimension
             )
             threads.append(image_loader)
             image_loader.start()
