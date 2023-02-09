@@ -31,7 +31,7 @@ if __name__ == "__main__":
         help="Number of transitions to load per part.",
     )
     argparser.add_argument(
-        "--h5path",
+        "--zarr_path",
         type=str,
         default=None,
         help="Path to HDF5 file to load.",
@@ -44,17 +44,22 @@ if __name__ == "__main__":
         disable_env_checker=True
     )
 
-    stats = env.get_dataset_stats(h5path=args.h5path)
+    stats = env.get_dataset_stats(zarr_path=args.zarr_path)
     print("Number of timesteps in dataset: ", stats["n_timesteps"])
 
-    t0 = time()
     # load subsets of the dataset at random positions
+    indices = []
     for i in range(args.n_parts):
         start = np.random.randint(0, stats["n_timesteps"] - args.part_size)
-        rng = (
-            start,
-            start + args.part_size
-        )
-        part = env.get_dataset(rng=rng, h5path=args.h5path)
+        if args.part_size == 1:
+            indices.append(start)
+        else:
+            indices.extend(range(start, start + args.part_size))
+    indices = np.array(indices)
+    t0 = time()
+    part = env.get_dataset(indices=indices, zarr_path=args.zarr_path)
     t1 = time()
     print(f"Loaded {args.n_parts} parts of size {args.part_size} in {t1 - t0:.2f} s")
+
+    print("Observation shape: ", part["observations"].shape)
+    print("Action shape: ", part["actions"].shape)

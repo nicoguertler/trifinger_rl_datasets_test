@@ -10,6 +10,48 @@ import numpy as np
 import trifinger_rl_datasets  # noqa
 
 
+def show_images(image_data, timestep_dimension):
+    """Show loaded images.
+
+    Args:
+        image_data (np.ndarray):  Array containing the image data.
+        no_timestep_dimension (bool):  If False, the first dimension of the
+            image_data array is assumed to correspond to camera timesteps.
+            Otherwise, the first dimension is assumed to correspond to
+            images."""
+
+    if timestep_dimension:
+        n_timesteps, n_cameras, n_channels, height, width = images.shape
+        output_image = np.zeros(
+            (n_cameras * height, n_timesteps * width, n_channels),
+            dtype=np.uint8
+        )
+    else:
+        n_images, n_channels, height, width = images.shape
+        output_image = np.zeros(
+            (height, n_images * width, n_channels),
+            dtype=np.uint8
+        )
+    # loop over tuples containing images from all cameras at one timestep
+    for i, image_s in enumerate(images):
+        if timestep_dimension:
+            # concatenate images from all cameras along the height axis
+            image_s = np.concatenate(image_s, axis=1)
+        # change to (height, width, channels) format for cv2
+        image_s = np.transpose(image_s, (1, 2, 0))
+        # copy column of camera images to output image
+        output_image[:, i * width:(i + 1) * width, ...] = image_s
+    # convert RGB to BGR for cv2
+    output_image = cv2.cvtColor(output_image, cv2.COLOR_RGB2BGR)
+
+    legend = "Each column corresponds to the camera images at one timestep."
+    print(legend)
+    print("Press any key to close window.")
+    cv2.imshow(legend, output_image)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(description=__doc__)
     argparser.add_argument(
@@ -25,7 +67,7 @@ if __name__ == "__main__":
         help="Number of camera timesteps to load image data for.",
     )
     argparser.add_argument(
-        "--h5path",
+        "--zarr_path",
         type=str,
         default=None,
         help="Path to HDF5 file to load.",
@@ -34,6 +76,12 @@ if __name__ == "__main__":
         "--do-not-show-images",
         action="store_true",
         help="Do not show images if this is set.",
+    )
+    argparser.add_argument(
+        "--no-timestep-dimension",
+        dest="timestep_dimension",
+        action="store_false",
+        help="Do not include the timestep dimension in the output array."
     )
     args = argparser.parse_args()
 
@@ -44,7 +92,7 @@ if __name__ == "__main__":
     )
 
     # get information about image data
-    image_stats = env.get_image_stats(h5path=args.h5path)
+    image_stats = env.get_image_stats(zarr_path=args.zarr_path)
     print("Image dataset:")
     for key, value in image_stats.items():
         print(f"{key}: {value}")
@@ -56,32 +104,11 @@ if __name__ == "__main__":
     images = env.get_image_data(
         # images from 3 cameras for each timestep
         rng=(0, 3 * args.n_timesteps),
-        h5path=args.h5path
+        zarr_path=args.zarr_path,
+        timestep_dimension=args.timestep_dimension
     )
     print(f"Loading took {time() - t0:.3f} seconds.")
 
-    # concatenate images from all camera timesteps and cameras and show them
-    # ----------------------------------------------------------------------
+    # show images
     if not args.do_not_show_images:
-        n_timesteps, n_cameras, n_channels, height, width = images.shape
-        output_image = np.zeros(
-            (n_cameras * height, n_timesteps * width, n_channels),
-            dtype=np.uint8
-        )
-        # loop over tuples containing images from all cameras at one timestep
-        for i, image_tuple in enumerate(images):
-            # concatenate images from all cameras along the height axis
-            concatenated_image_tuple = np.concatenate(image_tuple, axis=1)
-            # change to (height, width, channels) format for cv2
-            concatenated_image_tuple = np.transpose(concatenated_image_tuple, (1, 2, 0))
-            # copy column of camera images to output image
-            output_image[:, i * width:(i + 1) * width, ...] = concatenated_image_tuple
-        # convert RGB to BGR for cv2
-        output_image = cv2.cvtColor(output_image, cv2.COLOR_RGB2BGR)
-
-        legend = "Each column corresponds to the camera images at one timestep."
-        print(legend)
-        print("Press any key to close window.")
-        cv2.imshow(legend, output_image)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+        show_images(images, args.timestep_dimension)
