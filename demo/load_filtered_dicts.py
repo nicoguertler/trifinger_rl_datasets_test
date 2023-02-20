@@ -35,7 +35,7 @@ if __name__ == "__main__":
             "velocity": True,
             "fingertip_force": False,
         },
-        "object_observation": {"keypoints": True},
+        "camera_observation": {"object_keypoints": True},
     }
     env = gym.make(
         args.env_name,

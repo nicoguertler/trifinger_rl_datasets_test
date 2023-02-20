@@ -1,10 +1,11 @@
+from pathlib import Path
 from time import sleep, time
 from typing import Tuple, Dict, Any, Optional
 import logging
-import os
 
 import gymnasium as gym
 import numpy as np
+from pybullet import ER_TINY_RENDERER
 
 import trifinger_simulation
 import trifinger_simulation.visual_objects
@@ -40,6 +41,8 @@ class SimTriFingerCubeEnv(gym.Env):
         reward_type: str = "dense",
         visualization: bool = False,
         real_time: bool = True,
+        image_obs: bool = False,
+        camera_config_robot: int = 1,
     ):
         """
         Args:
@@ -54,6 +57,10 @@ class SimTriFingerCubeEnv(gym.Env):
             real_time (bool): If true, the environment is stepped in real
                 time instead of as fast as possible (ignored if visualization is
                 disabled).
+            image_obs (bool): If true, the camera images are returned as part
+                of the observation.
+            camera_config_robot (int): ID of the robot to retrieve camera
+                configs from. Only used if image_obs is True.
         """
         # Basic initialization
         # ====================
@@ -76,18 +83,29 @@ class SimTriFingerCubeEnv(gym.Env):
         self.reward_type = reward_type
         self.visualization = visualization
         self.real_time = real_time
+        self.image_obs = image_obs
+        self.camera_config_robot = camera_config_robot
 
         # load trajectory that is played back for resetting the cube
-        trajectory_file_path = os.path.join(
-            os.path.dirname(os.path.realpath(__file__)),
-            "data",
-            "trifingerpro_shuffle_cube_trajectory_fast.npy",
+        trajectory_file_path = (
+            Path(__file__).resolve().parent / "data"
+            / "trifingerpro_shuffle_cube_trajectory_fast.npy"
         )
         with open(trajectory_file_path, "rb") as f:
             self._cube_reset_traj = np.load(f)
 
         # simulated robot has robot ID 0
         self.robot_id = 0
+
+        if image_obs:
+            # create camera object
+            camera_config_dir = Path(__file__).resolve().parent / "data"
+            calib_filename_pattern = f"r{self.camera_config_robot}_" + "camera{id}.yml"
+            self.camera = trifinger_simulation.camera.create_trifinger_camera_array_from_config(
+                camera_config_dir, calib_filename_pattern=calib_filename_pattern
+            )
+        else:
+            self.camera = None
 
         # Create the action and observation spaces
         # ========================================
@@ -127,14 +145,14 @@ class SimTriFingerCubeEnv(gym.Env):
         )
         robot_id_space = gym.spaces.Box(low=0, high=20, shape=(1,), dtype=np.int_)
 
-        # object pose
-        object_obs_space_dict: Dict[str, gym.Space] = {
-            "position": gym.spaces.Box(
+        # camera observation space
+        camera_obs_space_dict: Dict[str, gym.Space] = {
+            "object_position": gym.spaces.Box(
                 low=trifingerpro_limits.object_position.low,
                 high=trifingerpro_limits.object_position.high,
                 dtype=np.float32,
             ),
-            "orientation": gym.spaces.Box(
+            "object_orientation": gym.spaces.Box(
                 low=trifingerpro_limits.object_orientation.low,
                 high=trifingerpro_limits.object_orientation.high,
                 dtype=np.float32,
@@ -145,33 +163,55 @@ class SimTriFingerCubeEnv(gym.Env):
             ),
         }
         if self.keypoint_obs:
-            object_obs_space_dict["keypoints"] = gym.spaces.Box(
+            camera_obs_space_dict["object_keypoints"] = gym.spaces.Box(
                 low=np.array([[-0.6, -0.6, 0.0]] * self.n_keypoints),
                 high=np.array([[0.6, 0.6, 0.3]] * self.n_keypoints),
                 dtype=np.float32,
             )
-        object_obs_space = gym.spaces.Dict(object_obs_space_dict)
+        if self.image_obs:
+            n_cameras = len(self.camera.cameras)
+            images_space = gym.spaces.Box(
+                low=0,
+                high=255,
+                shape=(
+                    n_cameras, 3, self.camera.cameras[0]._output_height,
+                    self.camera.cameras[0]._output_width
+                ),
+                dtype=np.uint8
+            )
+            camera_obs_space_dict["images"] = images_space
+        camera_obs_space = gym.spaces.Dict(camera_obs_space_dict)
 
         # goal space
         if self.difficulty == 4:
             if self.keypoint_obs:
                 goal_space = gym.spaces.Dict(
-                    {"keypoints": object_obs_space["keypoints"]}
+                    {"object_keypoints": camera_obs_space["object_keypoints"]}
                 )
             else:
                 goal_space = gym.spaces.Dict(
-                    {k: object_obs_space[k] for k in ["position", "orientation"]}
+                    {k: camera_obs_space[k] for k in ["object_position", "object_orientation"]}
                 )
         else:
-            goal_space = gym.spaces.Dict({"position": object_obs_space["position"]})
+            goal_space = gym.spaces.Dict({"object_position": camera_obs_space["object_position"]})
 
         # action space
         self.action_space = robot_torque_space
         self._initial_action = trifingerpro_limits.robot_torque.default
 
+        # NOTE: The order of dictionary items matters as it determines how
+        # the observations are flattened/unflattened. The observation space
+        # is therefore sorted by key.
+
+        def sort_by_key(d):
+            return {
+                k: (gym.spaces.Dict(sort_by_key(v.spaces)) if isinstance(v, gym.spaces.Dict) else v)
+                for k, v in sorted(d.items(), key=lambda item: item[0])
+            }
+
         # complete observation space
         self.observation_space = gym.spaces.Dict(
-            {
+            sort_by_key({
                 "robot_observation": gym.spaces.Dict(
                     {
                         "position": robot_position_space,
@@ -183,14 +223,14 @@ class SimTriFingerCubeEnv(gym.Env):
                         "robot_id": robot_id_space,
                     }
                 ),
-                "object_observation": object_obs_space,
+                "camera_observation": camera_obs_space,
                 "action": self.action_space,
                 "desired_goal": goal_space,
                 "achieved_goal": goal_space,
-            }
+            })
         )
 
-        self._old_object_obs: Optional[Dict[str, Any]] = None
+        self._old_camera_obs: Optional[Dict[str, Any]] = None
         self.t_obs: int = 0
 
         # Count consecutive steps where timing is violated (to decide when the show a
@@ -250,12 +290,12 @@ class SimTriFingerCubeEnv(gym.Env):
                 # Use full keypoints if available as only difficulty 4 considers
                 # orientation
                 return self._kernel_reward(
-                    achieved_goal["keypoints"], desired_goal["keypoints"]
+                    achieved_goal["object_keypoints"], desired_goal["object_keypoints"]
                 )
             else:
                 # use position for all other difficulties
                 return self._kernel_reward(
-                    achieved_goal["position"], desired_goal["position"]
+                    achieved_goal["object_position"], desired_goal["object_position"]
                 )
         elif self.reward_type == "sparse":
             return self.has_achieved(achieved_goal, desired_goal)
@@ -271,15 +311,15 @@ class SimTriFingerCubeEnv(gym.Env):
 
         desired = desired_goal
         achieved = achieved_goal
-        position_diff = np.linalg.norm(desired["position"] - achieved["position"])
+        position_diff = np.linalg.norm(desired["object_position"] - achieved["object_position"])
         # cast from np.bool_ to bool to make mypy happy
         position_check = bool(position_diff < POSITION_THRESHOLD)
 
         if self.difficulty < 4:
             return position_check
         else:
-            a = to_quat(desired["orientation"])
-            b = to_quat(achieved["orientation"])
+            a = to_quat(desired["object_orientation"])
+            b = to_quat(achieved["object_orientation"])
             b_conj = b.conjugate()
             quat_prod = a * b_conj
             norm = np.linalg.norm([quat_prod.x, quat_prod.y, quat_prod.z])
@@ -402,8 +442,8 @@ class SimTriFingerCubeEnv(gym.Env):
         )
         # sample goal
         self.active_goal = task.sample_goal(difficulty=self.difficulty)
-        # visualize the goal
-        if self.visualization:
+        # visualize the goal (but not if image observations are used)
+        if self.visualization and not self.image_obs:
             self.goal_marker = trifinger_simulation.visual_objects.CubeMarker(
                 width=task._CUBE_WIDTH,
                 position=self.active_goal.position,
@@ -451,7 +491,7 @@ class SimTriFingerCubeEnv(gym.Env):
             )
 
         # update goal visualisation
-        if self.visualization:
+        if self.visualization and not self.image_obs:
             self.goal_marker.set_state(
                 self.active_goal.position, self.active_goal.orientation
             )
@@ -482,53 +522,59 @@ class SimTriFingerCubeEnv(gym.Env):
 
         info: Dict[str, Any] = {"time_index": t}
 
-        # object
-        object_obs_processed = {
-            "position": object_observation.position.astype(np.float32),
-            "orientation": object_observation.orientation.astype(np.float32),
+        # camera observation
+        camera_obs_processed = {
+            "object_position": object_observation.position.astype(np.float32),
+            "object_orientation": object_observation.orientation.astype(np.float32),
             # time elapsed since capturing of pose in seconds
             "delay": np.array(
                 [self._get_pose_delay(camera_observation, t)], dtype=np.float32
             ),
             "confidence": np.array([object_observation.confidence], dtype=np.float32),
         }
+        if self.image_obs:
+            # RGB camera images created with software renderer
+            # (using openGL requires GUI to run)
+            images = np.array(self.camera.get_images(ER_TINY_RENDERER))
+            # convert to channel first
+            images = np.transpose(images, (0, 3, 1, 2))
+            camera_obs_processed["images"] = images
         if self.keypoint_obs:
-            object_obs_processed["keypoints"] = get_keypoints_from_pose(
+            camera_obs_processed["object_keypoints"] = get_keypoints_from_pose(
                 object_observation
             )
-
-        if self._old_object_obs is not None:
+        if self._old_camera_obs is not None:
             # handle quaternion flipping
             q_sum = (
-                self._old_object_obs["orientation"]
-                + object_obs_processed["orientation"]
+                self._old_camera_obs["object_orientation"]
+                + camera_obs_processed["object_orientation"]
             )
             if np.linalg.norm(q_sum) < 0.2:
-                object_obs_processed["orientation"] = -object_obs_processed[
-                    "orientation"
+                camera_obs_processed["object_orientation"] = -camera_obs_processed[
+                    "object_orientation"
                 ]
-        self._old_object_obs = object_obs_processed
+        self._old_camera_obs = camera_obs_processed
 
         # goal represented as position and orientation
         desired_goal_pos_ori = {
-            "position": self.active_goal.position.astype(np.float32),
-            "orientation": self.active_goal.orientation.astype(np.float32),
+            "object_position": self.active_goal.position.astype(np.float32),
+            "object_orientation": self.active_goal.orientation.astype(np.float32),
         }
         achieved_goal_pos_ori = {
-            "position": object_obs_processed["position"],
-            "orientation": object_obs_processed["orientation"],
+            "object_position": camera_obs_processed["object_position"],
+            "object_orientation": camera_obs_processed["object_orientation"],
         }
         # goal as shown to agent
         if self.difficulty == 4:
             if self.keypoint_obs:
-                desired_goal = {"keypoints": get_keypoints_from_pose(self.active_goal)}
-                achieved_goal = {"keypoints": object_obs_processed["keypoints"]}
+                desired_goal = {"object_keypoints": get_keypoints_from_pose(self.active_goal)}
+                achieved_goal = {"object_keypoints": camera_obs_processed["keypoints"]}
             else:
                 desired_goal = desired_goal_pos_ori
                 achieved_goal = achieved_goal_pos_ori
         else:
-            desired_goal = {"position": self.active_goal.position.astype(np.float32)}
-            achieved_goal = {"position": object_obs_processed["position"]}
+            desired_goal = {"object_position": self.active_goal.position.astype(np.float32)}
+            achieved_goal = {"object_position": camera_obs_processed["object_position"]}
 
         # fingertip positions and velocities
         fingertip_position, fingertip_velocity = self.platform.forward_kinematics(
@@ -547,7 +593,7 @@ class SimTriFingerCubeEnv(gym.Env):
                 "fingertip_velocity": fingertip_velocity,
                 "robot_id": np.array([self.robot_id], dtype=np.int_),
             },
-            "object_observation": object_obs_processed,
+            "camera_observation": camera_obs_processed,
             "action": action.astype(np.float32),
             "desired_goal": desired_goal,
             "achieved_goal": achieved_goal,

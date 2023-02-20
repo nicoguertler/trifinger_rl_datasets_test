@@ -29,11 +29,18 @@ if __name__ == "__main__":
         default=None,
         help="Path to HDF5 file to load.",
     )
+    argparser.add_argument(
+        "--flatten-obs",
+        action="store_true",
+        help="Flatten observations.",
+    )
+
     args = argparser.parse_args()
 
     env = gym.make(
         args.env,
-        disable_env_checker=True
+        disable_env_checker=True,
+        flatten_obs=args.flatten_obs
     )
 
     # load only a subset of obervations, actions and rewards
