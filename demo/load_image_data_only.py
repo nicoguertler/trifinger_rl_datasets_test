@@ -44,7 +44,10 @@ def show_images(image_data, timestep_dimension):
     # convert RGB to BGR for cv2
     output_image = cv2.cvtColor(output_image, cv2.COLOR_RGB2BGR)
 
-    legend = "Each column corresponds to the camera images at one timestep."
+    if timestep_dimension:
+        legend = "Each column corresponds to the camera images at one timestep."
+    else:
+        legend = "Camera images"
     print(legend)
     print("Press any key to close window.")
     cv2.imshow(legend, output_image)
@@ -67,7 +70,7 @@ if __name__ == "__main__":
         help="Number of camera timesteps to load image data for.",
     )
     argparser.add_argument(
-        "--zarr_path",
+        "--zarr-path",
         type=str,
         default=None,
         help="Path to HDF5 file to load.",

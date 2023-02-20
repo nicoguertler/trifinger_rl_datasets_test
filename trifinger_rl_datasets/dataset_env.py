@@ -118,7 +118,8 @@ class TriFingerDatasetEnv(gym.Env):
         ref_min_score,
         trifinger_kwargs,
         real_robot=False,
-        visualization=None,
+        image_obs=True,
+        visualization=False,
         obs_to_keep=None,
         flatten_obs=True,
         scale_obs=False,
@@ -135,6 +136,8 @@ class TriFingerDatasetEnv(gym.Env):
                 SimTriFingerCubeEnv environment.
             real_robot (bool): Whether the data was collected on real
                 robots.
+            image_obs (bool): Whether observations contain camera
+                images.
             visualization (bool): Enables rendering for simulated
                 environment.
             obs_to_keep (dict): Dictionary with the same structure as
@@ -149,24 +152,40 @@ class TriFingerDatasetEnv(gym.Env):
                 for flattend observations.
         """
         super().__init__(**kwargs)
-        t_kwargs = deepcopy(trifinger_kwargs)
-        if visualization is not None:
-            t_kwargs["visualization"] = visualization
-        # underlying simulated TriFinger environment
-        self.sim_env = SimTriFingerCubeEnv(**t_kwargs)
-        self._orig_obs_space = self.sim_env.observation_space
-        self._orig_flat_obs_space = spaces.flatten_space(self._orig_obs_space)
 
         self.name = name
         self.dataset_url = dataset_url
         self.ref_max_score = ref_max_score
         self.ref_min_score = ref_min_score
         self.real_robot = real_robot
+        self.image_obs = image_obs
         self.obs_to_keep = obs_to_keep
         self.flatten_obs = flatten_obs
         self.scale_obs = scale_obs
         self.set_terminals = set_terminals
         self._local_dataset_path = None
+
+        t_kwargs = deepcopy(trifinger_kwargs)
+        t_kwargs["image_obs"] = image_obs
+        t_kwargs["visualization"] = visualization
+
+        # underlying simulated TriFinger environment
+        self.sim_env = SimTriFingerCubeEnv(**t_kwargs)
+        self._orig_obs_space = self.sim_env.observation_space
+
+        # remove camera observations from space used for flattening as images
+        # are treated separetely and not flattened
+        if self.image_obs:
+            stripped_camera_observations = spaces.Dict(
+                {
+                    k: v
+                    for k, v in
+                    self._orig_obs_space.spaces["camera_observation"].spaces.items()
+                    if k != "images"
+                }
+            )
+            self._orig_obs_space["camera_observation"] = stripped_camera_observations
+        self._orig_flat_obs_space = spaces.flatten_space(self._orig_obs_space)
 
         if scale_obs and not flatten_obs:
             raise NotImplementedError(
@@ -179,13 +198,16 @@ class TriFingerDatasetEnv(gym.Env):
         self.action_space = self.sim_env.action_space
 
         # observation space
+        # self._filtered_obs_space is the Dict observation space after
+        # filtering
         if self.obs_to_keep is not None:
             # construct filtered observation space
             self._filtered_obs_space = self._filter_dict(
-                keys_to_keep=self.obs_to_keep, d=self.sim_env.observation_space
+                keys_to_keep=self.obs_to_keep, d=self._orig_obs_space
             )
         else:
-            self._filtered_obs_space = self.sim_env.observation_space
+            self._filtered_obs_space = self._orig_obs_space
+        # self.observation_space is potentially also flattened
         if self.flatten_obs:
             # flat obs space
             self.observation_space = spaces.flatten_space(self._filtered_obs_space)
@@ -208,7 +230,7 @@ class TriFingerDatasetEnv(gym.Env):
             data_dir = Path("~/.trifinger_rl_datasets").expanduser()
             dataset_dir = data_dir / self.name
             dataset_dir.mkdir(exist_ok=True, parents=True)
-            local_path= dataset_dir / "data.mdb"
+            local_path = dataset_dir / "data.mdb"
             if not local_path.exists():
                 print(f"Downloading dataset {self.name}.")
                 urllib.request.urlretrieve(self.dataset_url, local_path)
@@ -252,20 +274,42 @@ class TriFingerDatasetEnv(gym.Env):
         a = (obs - self._obs_unscaled_low.low) / interval
         return a * 2.0 - 1.0
 
-    def _process_obs(self, obs: np.ndarray) -> np.ndarray:
-        """Process obs according to params."""
+    def _process_obs(self, obs: Union[np.ndarray, Dict]) -> np.ndarray:
+        """Process obs according to params.
 
+        Assumes that if `self.obs_to_keep` is not None, then the observations
+        are provided as a dictionary.
+        Args:
+            obs: Dictionary or array containing the
+                observations.
+        Returns:
+            Processed observations. If `self.flatten_obs` is False then
+            as a dictionary. If `self.flatten_obs` is True then either as
+            a 1D NumPy array (if no images are contained in obs) or as a
+            tuple (if images are contained in the obs dictionary)
+            consisting of
+            * a 1D NumPy array containing all observations except the
+            camera images, and
+            * a NumPy array of shape (n_cameras, n_channels, height, width)
+            containing the camera images."""
+
+        images = None
         if self.obs_to_keep is not None:
             # filter obs
-            if self.obs_to_keep is not None:
-                obs = self._filter_dict(self.obs_to_keep, obs)
+            obs = self._filter_dict(self.obs_to_keep, obs)
         if self.flatten_obs and isinstance(obs, dict):
+            if "images" in obs["camera_observation"]:
+                # remove camera_observations/images from obs
+                images = obs["camera_observation"].pop("images")
             # flatten obs
             obs = spaces.flatten(self._filtered_obs_space, obs)
         if self.scale_obs:
             # scale obs
             obs = self._scale_obs(obs)
-        return obs
+        if images is not None:
+            return obs, images
+        else:
+            return obs
 
     def get_obs_indices(self):
         """Get index ranges that correspond to the different observation components.
@@ -583,7 +627,7 @@ class TriFingerDatasetEnv(gym.Env):
             obs = data_dict["observations"]
             for i in range(obs.shape[0]):
                 unflattened_obs.append(
-                    spaces.unflatten(self.sim_env.observation_space, obs[i, ...])
+                    spaces.unflatten(self._orig_obs_space, obs[i, ...])
                 )
             data_dict["observations"] = unflattened_obs
 
@@ -596,7 +640,7 @@ class TriFingerDatasetEnv(gym.Env):
         # process obs (filtering, flattening, scaling)
         for i in range(n_control_timesteps):
             data_dict["observations"][i] = self._process_obs(
-                data_dict["observations"][i]
+                obs=data_dict["observations"][i]
             )
         # turn observations into array if obs are flattened
         if self.flatten_obs:

@@ -26,5 +26,5 @@ if __name__ == "__main__":
     # print cube position over time
     print("Cube position over time: ")
     for i in range(n_observations):
-        index_range = obs_indices["object_observation"]["position"]
+        index_range = obs_indices["camera_observation"]["object_position"]
         print(dataset["observations"][i][slice(*index_range)])
