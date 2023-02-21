@@ -16,6 +16,16 @@ from .sampling_utils import sample_initial_cube_pose
 from .utils import to_quat, get_keypoints_from_pose
 
 
+class CameraWrapper:
+    """Simple wrapper around camera array to change default renderer."""
+
+    def __init__(self, camera):
+        self.camera = camera
+
+    def get_images(self, renderer=ER_TINY_RENDERER):
+        return self.camera.get_images(renderer)
+
+
 class SimTriFingerCubeEnv(gym.Env):
     """
     Gym environment for simulated manipulation of a cube with a TriFingerPro platform.
@@ -439,7 +449,14 @@ class SimTriFingerCubeEnv(gym.Env):
             visualization=self.visualization,
             initial_robot_position=initial_robot_position,
             initial_object_pose=initial_object_pose,
+            enable_cameras=self.image_obs
         )
+        if self.image_obs:
+            # overwrite camera with wrapped version which uses software rendering
+            self.platform.tricamera = CameraWrapper(self.camera)
+            first_camera_obs = self.platform._get_current_camera_observation(0)
+            self.platform._delayed_camera_observation = first_camera_obs
+            self.platform._camera_observation_t = first_camera_obs
         # sample goal
         self.active_goal = task.sample_goal(difficulty=self.difficulty)
         # visualize the goal (but not if image observations are used)
@@ -535,7 +552,7 @@ class SimTriFingerCubeEnv(gym.Env):
         if self.image_obs:
             # RGB camera images created with software renderer
             # (using openGL requires GUI to run)
-            images = np.array(self.camera.get_images(ER_TINY_RENDERER))
+            images = np.array([cam.image for cam in camera_observation.cameras])
             # convert to channel first
             images = np.transpose(images, (0, 3, 1, 2))
             camera_obs_processed["images"] = images
