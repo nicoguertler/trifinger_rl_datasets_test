@@ -19,9 +19,7 @@ if __name__ == "__main__":
         help="Name of dataset environment to load.",
     )
     argparser.add_argument(
-        "--flatten-obs",
-        action="store_true",
-        help="Flattens observations if set.",
+        "--flatten-obs", action="store_true", help="Flattens observations if set."
     )
     argparser.add_argument(
         "--no-visualization",
@@ -37,7 +35,7 @@ if __name__ == "__main__":
         visualization=args.visualization,
         # include camera images in the observation
         image_obs=True,
-        flatten_obs=args.flatten_obs
+        flatten_obs=args.flatten_obs,
     )
     obs = env.reset()
     truncated = False

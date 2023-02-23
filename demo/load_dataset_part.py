@@ -24,24 +24,15 @@ if __name__ == "__main__":
         help="Range of timesteps to load image data for.",
     )
     argparser.add_argument(
-        "--zarr-path",
-        type=str,
-        default=None,
-        help="Path to HDF5 file to load.",
+        "--zarr-path", type=str, default=None, help="Path to HDF5 file to load."
     )
     argparser.add_argument(
-        "--flatten-obs",
-        action="store_true",
-        help="Flatten observations.",
+        "--flatten-obs", action="store_true", help="Flatten observations."
     )
 
     args = argparser.parse_args()
 
-    env = gym.make(
-        args.env,
-        disable_env_checker=True,
-        flatten_obs=args.flatten_obs
-    )
+    env = gym.make(args.env, disable_env_checker=True, flatten_obs=args.flatten_obs)
 
     # load only a subset of obervations, actions and rewards
     dataset = env.get_dataset(rng=tuple(args.range), zarr_path=args.zarr_path)

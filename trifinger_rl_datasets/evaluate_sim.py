@@ -101,10 +101,7 @@ def main():
     policy = Policy(env.action_space, env.observation_space, env.sim_env.episode_length)
 
     evaluation = Evaluation(env)
-    eval_res = evaluation.evaluate(
-        policy=policy,
-        n_episodes=args.n_episodes,
-    )
+    eval_res = evaluation.evaluate(policy=policy, n_episodes=args.n_episodes)
     json_result = json.dumps(eval_res, indent=4)
 
     print("Evaluation result: ")

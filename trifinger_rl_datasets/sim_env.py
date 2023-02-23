@@ -98,7 +98,8 @@ class SimTriFingerCubeEnv(gym.Env):
 
         # load trajectory that is played back for resetting the cube
         trajectory_file_path = (
-            Path(__file__).resolve().parent / "data"
+            Path(__file__).resolve().parent
+            / "data"
             / "trifingerpro_shuffle_cube_trajectory_fast.npy"
         )
         with open(trajectory_file_path, "rb") as f:
@@ -184,10 +185,12 @@ class SimTriFingerCubeEnv(gym.Env):
                 low=0,
                 high=255,
                 shape=(
-                    n_cameras, 3, self.camera.cameras[0]._output_height,
-                    self.camera.cameras[0]._output_width
+                    n_cameras,
+                    3,
+                    self.camera.cameras[0]._output_height,
+                    self.camera.cameras[0]._output_width,
                 ),
-                dtype=np.uint8
+                dtype=np.uint8,
             )
             camera_obs_space_dict["images"] = images_space
         camera_obs_space = gym.spaces.Dict(camera_obs_space_dict)
@@ -200,10 +203,15 @@ class SimTriFingerCubeEnv(gym.Env):
                 )
             else:
                 goal_space = gym.spaces.Dict(
-                    {k: camera_obs_space[k] for k in ["object_position", "object_orientation"]}
+                    {
+                        k: camera_obs_space[k]
+                        for k in ["object_position", "object_orientation"]
+                    }
                 )
         else:
-            goal_space = gym.spaces.Dict({"object_position": camera_obs_space["object_position"]})
+            goal_space = gym.spaces.Dict(
+                {"object_position": camera_obs_space["object_position"]}
+            )
 
         # action space
         self.action_space = robot_torque_space
@@ -215,29 +223,35 @@ class SimTriFingerCubeEnv(gym.Env):
 
         def sort_by_key(d):
             return {
-                k: (gym.spaces.Dict(sort_by_key(v.spaces)) if isinstance(v, gym.spaces.Dict) else v)
+                k: (
+                    gym.spaces.Dict(sort_by_key(v.spaces))
+                    if isinstance(v, gym.spaces.Dict)
+                    else v
+                )
                 for k, v in sorted(d.items(), key=lambda item: item[0])
             }
 
         # complete observation space
         self.observation_space = gym.spaces.Dict(
-            sort_by_key({
-                "robot_observation": gym.spaces.Dict(
-                    {
-                        "position": robot_position_space,
-                        "velocity": robot_velocity_space,
-                        "torque": robot_torque_space,
-                        "fingertip_force": robot_fingertip_force_space,
-                        "fingertip_position": robot_fingertip_pos_space,
-                        "fingertip_velocity": robot_fingertip_vel_space,
-                        "robot_id": robot_id_space,
-                    }
-                ),
-                "camera_observation": camera_obs_space,
-                "action": self.action_space,
-                "desired_goal": goal_space,
-                "achieved_goal": goal_space,
-            })
+            sort_by_key(
+                {
+                    "robot_observation": gym.spaces.Dict(
+                        {
+                            "position": robot_position_space,
+                            "velocity": robot_velocity_space,
+                            "torque": robot_torque_space,
+                            "fingertip_force": robot_fingertip_force_space,
+                            "fingertip_position": robot_fingertip_pos_space,
+                            "fingertip_velocity": robot_fingertip_vel_space,
+                            "robot_id": robot_id_space,
+                        }
+                    ),
+                    "camera_observation": camera_obs_space,
+                    "action": self.action_space,
+                    "desired_goal": goal_space,
+                    "achieved_goal": goal_space,
+                }
+            )
         )
 
         self._old_camera_obs: Optional[Dict[str, Any]] = None
@@ -321,7 +335,9 @@ class SimTriFingerCubeEnv(gym.Env):
 
         desired = desired_goal
         achieved = achieved_goal
-        position_diff = np.linalg.norm(desired["object_position"] - achieved["object_position"])
+        position_diff = np.linalg.norm(
+            desired["object_position"] - achieved["object_position"]
+        )
         # cast from np.bool_ to bool to make mypy happy
         position_check = bool(position_diff < POSITION_THRESHOLD)
 
@@ -449,7 +465,7 @@ class SimTriFingerCubeEnv(gym.Env):
             visualization=self.visualization,
             initial_robot_position=initial_robot_position,
             initial_object_pose=initial_object_pose,
-            enable_cameras=self.image_obs
+            enable_cameras=self.image_obs,
         )
         if self.image_obs:
             # overwrite camera with wrapped version which uses software rendering
@@ -584,13 +600,17 @@ class SimTriFingerCubeEnv(gym.Env):
         # goal as shown to agent
         if self.difficulty == 4:
             if self.keypoint_obs:
-                desired_goal = {"object_keypoints": get_keypoints_from_pose(self.active_goal)}
+                desired_goal = {
+                    "object_keypoints": get_keypoints_from_pose(self.active_goal)
+                }
                 achieved_goal = {"object_keypoints": camera_obs_processed["keypoints"]}
             else:
                 desired_goal = desired_goal_pos_ori
                 achieved_goal = achieved_goal_pos_ori
         else:
-            desired_goal = {"object_position": self.active_goal.position.astype(np.float32)}
+            desired_goal = {
+                "object_position": self.active_goal.position.astype(np.float32)
+            }
             achieved_goal = {"object_position": camera_obs_processed["object_position"]}
 
         # fingertip positions and velocities

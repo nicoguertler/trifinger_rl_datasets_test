@@ -9,8 +9,7 @@ import trifinger_rl_datasets  # noqa
 
 if __name__ == "__main__":
     env = gym.make(
-        "trifinger-cube-push-real-expert-image-mini-v0",
-        disable_env_checker=True
+        "trifinger-cube-push-real-expert-image-mini-v0", disable_env_checker=True
     )
 
     # load only a subset of obervations, actions and rewards

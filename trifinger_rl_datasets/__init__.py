@@ -64,9 +64,7 @@ dataset_params = [
     # real-robot stage/pushing expert with images (mini version for testing)
     {
         "name": "trifinger-cube-push-real-expert-image-mini-v0",
-        "dataset_url": (
-            "https://keeper.mpdl.mpg.de/f/3cf987595fdc4522a644/?dl=1"
-        ),
+        "dataset_url": ("https://keeper.mpdl.mpg.de/f/3cf987595fdc4522a644/?dl=1"),
         "ref_min_score": 0.0,
         "ref_max_score": 1.0 * 15000 / 20,
         "real_robot": True,
@@ -81,9 +79,7 @@ dataset_params = [
     # codec)
     {
         "name": "trifinger-cube-push-real-expert-image-mini-jpeg-v0",
-        "dataset_url": (
-            "https://keeper.mpdl.mpg.de/f/053c21e01ff3446ebc7a/?dl=1"
-        ),
+        "dataset_url": ("https://keeper.mpdl.mpg.de/f/053c21e01ff3446ebc7a/?dl=1"),
         "ref_min_score": 0.0,
         "ref_max_score": 1.0 * 15000 / 20,
         "real_robot": True,
@@ -103,7 +99,7 @@ dataset_params = [
             "https://keeper.mpdl.mpg.de/f/4023f07429404d0bbc86/?dl=1",
             "https://keeper.mpdl.mpg.de/f/597f6bd9607f4b1d9fa2/?dl=1",
             "https://keeper.mpdl.mpg.de/f/322484b05e4f416bb345/?dl=1",
-            "https://keeper.mpdl.mpg.de/f/39658fcbf7214091905a/?dl=1"
+            "https://keeper.mpdl.mpg.de/f/39658fcbf7214091905a/?dl=1",
         ],
         "ref_min_score": 0.0,
         "ref_max_score": 1.0 * 15000 / 20,

@@ -31,18 +31,12 @@ if __name__ == "__main__":
         help="Number of transitions to load per part.",
     )
     argparser.add_argument(
-        "--zarr_path",
-        type=str,
-        default=None,
-        help="Path to HDF5 file to load.",
+        "--zarr_path", type=str, default=None, help="Path to HDF5 file to load."
     )
     args = argparser.parse_args()
 
     # create environment
-    env = gym.make(
-        args.env,
-        disable_env_checker=True
-    )
+    env = gym.make(args.env, disable_env_checker=True)
 
     stats = env.get_dataset_stats(zarr_path=args.zarr_path)
     print("Number of timesteps in dataset: ", stats["n_timesteps"])

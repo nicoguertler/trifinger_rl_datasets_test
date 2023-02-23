@@ -21,9 +21,17 @@ class ImageLoader(Thread):
     loader_id-th image. Processing includes decoding, reordering
     of pixels and debayering."""
 
-    def __init__(self, loader_id, n_loaders, image_data, unique_images,
-                 n_unique_images, n_cameras, reorder_pixels,
-                 timestep_dimension):
+    def __init__(
+        self,
+        loader_id,
+        n_loaders,
+        image_data,
+        unique_images,
+        n_unique_images,
+        n_cameras,
+        reorder_pixels,
+        timestep_dimension,
+    ):
         """
         Args:
             loader_id: ID of this loader.  This loader will load every
@@ -179,8 +187,9 @@ class TriFingerDatasetEnv(gym.Env):
             stripped_camera_observations = spaces.Dict(
                 {
                     k: v
-                    for k, v in
-                    self._orig_obs_space.spaces["camera_observation"].spaces.items()
+                    for k, v in self._orig_obs_space.spaces[
+                        "camera_observation"
+                    ].spaces.items()
                     if k != "images"
                 }
             )
@@ -235,7 +244,9 @@ class TriFingerDatasetEnv(gym.Env):
                 print(f"Downloading dataset {self.name}.")
                 urllib.request.urlretrieve(self.dataset_url, local_path)
                 if not local_path.exists():
-                    raise IOError(f"Failed to download dataset from {self.dataset_url}.")
+                    raise IOError(
+                        f"Failed to download dataset from {self.dataset_url}."
+                    )
             self._local_dataset_path = dataset_dir
         return self._local_dataset_path
 
@@ -376,7 +387,7 @@ class TriFingerDatasetEnv(gym.Env):
             dataset_stats = {
                 "n_timesteps": root["observations"].shape[0],
                 "obs_size": root["observations"].shape[1],
-                "action_size": root["actions"].shape[1]
+                "action_size": root["actions"].shape[1],
             }
         return dataset_stats
 
@@ -416,7 +427,7 @@ class TriFingerDatasetEnv(gym.Env):
         indices: Optional[np.ndarray] = None,
         zarr_path: Union[str, os.PathLike] = None,
         timestep_dimension: bool = True,
-        n_threads: Optional[int] = None
+        n_threads: Optional[int] = None,
     ) -> np.ndarray:
         """Get image data from dataset.
 
@@ -484,7 +495,7 @@ class TriFingerDatasetEnv(gym.Env):
                 n_unique_images=n_unique_images,
                 n_cameras=n_cameras,
                 reorder_pixels=reorder_pixels,
-                timestep_dimension=timestep_dimension
+                timestep_dimension=timestep_dimension,
             )
             threads.append(image_loader)
             image_loader.start()
@@ -494,10 +505,12 @@ class TriFingerDatasetEnv(gym.Env):
         return unique_images
 
     def get_dataset(
-        self, zarr_path: Union[str, os.PathLike] = None, clip: bool = True,
+        self,
+        zarr_path: Union[str, os.PathLike] = None,
+        clip: bool = True,
         rng: Optional[Tuple[int, int]] = None,
         indices: Optional[np.ndarray] = None,
-        n_threads: Optional[int] = None
+        n_threads: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Get the dataset.
 
@@ -599,8 +612,7 @@ class TriFingerDatasetEnv(gym.Env):
                 rng = (None, None)
             rng = (
                 0 if rng[0] is None else rng[0],
-                n_avail_transitions if rng[1] is None else rng[1]
-
+                n_avail_transitions if rng[1] is None else rng[1],
             )
             range_slice = slice(*rng)
             for k in self._PRELOAD_VECTOR_KEYS + self._PRELOAD_SCALAR_KEYS:
@@ -657,18 +669,16 @@ class TriFingerDatasetEnv(gym.Env):
                 image_index_range = (
                     obs_to_image_index[0],
                     # add n_cameras to include last images as well
-                    obs_to_image_index[-1] + n_cameras
+                    obs_to_image_index[-1] + n_cameras,
                 )
                 # load images
                 unique_images = self.get_image_data(
-                    rng=image_index_range,
-                    zarr_path=zarr_path,
-                    n_threads=n_threads
+                    rng=image_index_range, zarr_path=zarr_path, n_threads=n_threads
                 )
             else:
-                obs_to_image_index = root["obs_to_image_index"].get_coordinate_selection(
-                    indices
-                )
+                obs_to_image_index = root[
+                    "obs_to_image_index"
+                ].get_coordinate_selection(indices)
                 # load images from all cameras, not only first one
                 all_cam_indices = np.zeros(
                     obs_to_image_index.shape[0] * n_cameras, dtype=np.int64
@@ -677,24 +687,19 @@ class TriFingerDatasetEnv(gym.Env):
                     all_cam_indices[i::n_cameras] = obs_to_image_index + i
                 # remove duplicates and sort
                 image_indices, unique_to_original = np.unique(
-                    all_cam_indices,
-                    return_inverse=True
+                    all_cam_indices, return_inverse=True
                 )
                 # load images
                 unique_images = self.get_image_data(
-                    indices=image_indices,
-                    zarr_path=zarr_path,
-                    n_threads=n_threads
+                    indices=image_indices, zarr_path=zarr_path, n_threads=n_threads
                 )
             # repeat images to account for control frequency > camera frequency
             images = np.zeros(
-                (n_control_timesteps, ) + unique_images.shape[1:], dtype=np.uint8
+                (n_control_timesteps,) + unique_images.shape[1:], dtype=np.uint8
             )
             for i in range(n_control_timesteps):
                 if indices is None:
-                    index = (
-                        (obs_to_image_index[i] - obs_to_image_index[0]) // n_cameras
-                    )
+                    index = (obs_to_image_index[i] - obs_to_image_index[0]) // n_cameras
                 else:
                     # map from original image index to unique image index
                     index = unique_to_original[i * n_cameras] // n_cameras
