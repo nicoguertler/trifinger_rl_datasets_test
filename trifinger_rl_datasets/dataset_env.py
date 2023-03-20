@@ -1,4 +1,5 @@
 from copy import deepcopy
+import hashlib
 import os
 from pathlib import Path
 from threading import Thread
@@ -9,6 +10,8 @@ import cv2
 import gymnasium as gym
 import gymnasium.spaces as spaces
 import numpy as np
+from tqdm import tqdm
+import yaml
 import zarr
 
 from .sim_env import SimTriFingerCubeEnv
@@ -234,18 +237,66 @@ class TriFingerDatasetEnv(gym.Env):
             self.observation_space = self._filtered_obs_space
 
     def _download_dataset(self):
-        """Download dataset files if not already present."""
+        """Download dataset files if not already present.
+        
+        `self.dataset_url` is expected to point to a YAML file with the
+        following structure:
+        ```
+        n_parts: <number of parts>
+        md5_hash_parts:
+            - <md5 hash of part 1>
+            - <md5 hash of part 2>
+            ...
+        md5_hash_complete: <md5 hash of complete dataset>
+        ```
+        The dataset is split into multiple parts to allow for
+        continuing a download if it was interrupted. The complete
+        dataset is then reconstructed by concatenating the parts."""
         if self._local_dataset_path is None:
             data_dir = Path("~/.trifinger_rl_datasets").expanduser()
-            dataset_dir = data_dir / self.name
+            dataset_dir = data_dir / (self.name + ".zarr")
             dataset_dir.mkdir(exist_ok=True, parents=True)
             local_path = dataset_dir / "data.mdb"
             if not local_path.exists():
                 print(f"Downloading dataset {self.name}.")
-                urllib.request.urlretrieve(self.dataset_url, local_path)
+                # first download YAML file with info about dataset files
+                with urllib.request.urlopen(self.dataset_url) as web_url:
+                    dataset_info = yaml.safe_load(web_url)
+                # download dataset parts
+                for i, part_hash in enumerate(tqdm(dataset_info["md5_hash_parts"])):
+                    part_path = dataset_dir / f"{self.name}_{i:03d}"
+                    if not part_path.exists():
+                        # strip extension from dataset url
+                        stripped_url = ".".join(self.dataset_url.split(".")[:-1])
+                        stripped_url = self.dataset_url.rsplit(".", 1)[0]
+                        part_url = stripped_url + f"_{i:03d}"
+                        urllib.request.urlretrieve(part_url, part_path)
+                        if not part_path.exists():
+                            raise IOError(
+                                f"Failed to download part {i} of dataset from URL {part_url}."
+                            )
+                    # check hash
+                    with open(part_path, "rb") as f:
+                        m = hashlib.md5()
+                        m.update(f.read())
+                    if m.hexdigest() != part_hash:
+                        raise IOError(
+                            f"Hash of downloaded part {part_path} does not "
+                            f"match expected hash. Please delete "
+                            f"the file and try again."
+                        )
+                # combine parts
+                with open(local_path, "wb") as f:
+                    print("Assembling dataset parts.")
+                    for i in tqdm(range(dataset_info["n_parts"])):
+                        part_path = dataset_dir / f"{self.name}_{i:03d}"
+                        with open(part_path, "rb") as part_file:
+                            f.write(part_file.read())
+                        # delete part file
+                        part_path.unlink()
                 if not local_path.exists():
                     raise IOError(
-                        f"Failed to download dataset from {self.dataset_url}."
+                        f"Failed to assemble dataset {self.dataset_url} locally at {local_path}."
                     )
             self._local_dataset_path = dataset_dir
         return self._local_dataset_path

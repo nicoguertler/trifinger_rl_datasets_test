@@ -64,7 +64,7 @@ dataset_params = [
     # real-robot stage/pushing expert with images (mini version for testing)
     {
         "name": "trifinger-cube-push-real-expert-image-mini-v0",
-        "dataset_url": ("https://keeper.mpdl.mpg.de/f/3cf987595fdc4522a644/?dl=1"),
+        "dataset_url": "https://robots.real-robot-challenge.com/public/split_test/trifinger-cube-push-real-expert-image-mini-v0.yaml",
         "ref_min_score": 0.0,
         "ref_max_score": 1.0 * 15000 / 20,
         "real_robot": True,
