@@ -4,7 +4,7 @@ from gymnasium.envs.registration import register
 
 from .dataset_env import TriFingerDatasetEnv
 from .evaluation import Evaluation
-from .policy_base import PolicyBase
+from .policy_base import PolicyBase, PolicyConfig
 
 
 dataset_params = [
