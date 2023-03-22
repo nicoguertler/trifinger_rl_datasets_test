@@ -35,7 +35,7 @@ class Evaluation:
             action = policy.get_action(obs)
             if self.time_policy:
                 print("policy execution time: ", time() - time1)
-            obs, rew, done, info = self.env.step(action)
+            obs, rew, _, truncated, info = self.env.step(action)
             ep_return += rew
             max_reward = max(max_reward, rew)
             if info["has_achieved"]:
@@ -43,7 +43,7 @@ class Evaluation:
                 momentary_successes += 1
             self.env.render()
             n_steps += 1
-            if done:
+            if truncated:
                 if info["has_achieved"]:
                     print("Success: Goal achieved at end of episode.")
                 else:
@@ -79,11 +79,9 @@ class Evaluation:
                 # retrieve cube from barrier and center it approximately
                 self.env.sim_env.reset_cube()
             # Sample new goal
-            # TODO: Should we use fixed goals here like for the evaluation for the
-            # paper?
             self.env.sim_env.sample_new_goal()
             # move fingers to initial position and wait until cube has settled down
-            initial_obs = self.env.reset_fingers(self._reset_time)
+            initial_obs, initial_info = self.env.reset_fingers(self._reset_time)
 
         overall_stats = {"n_episodes": n_episodes}
         for k in ep_stats_list[0]:

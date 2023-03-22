@@ -1,4 +1,4 @@
-"""Evaluate a policy in simulation (used for the pre-stage)."""
+"""Evaluate a policy in simulation."""
 import argparse
 import importlib
 import json
@@ -82,8 +82,9 @@ def main():
 
     Policy = load_policy_class(args.policy_class)
 
-    flatten_observations = Policy.is_using_flattened_observations()
-    if flatten_observations:
+    policy_config = Policy.get_policy_config()
+
+    if policy_config.flatten_obs:
         print("Using flattened observations")
     else:
         print("Using structured observations")
@@ -94,7 +95,8 @@ def main():
             env_name,
             disable_env_checker=True,
             visualization=args.visualization,
-            flatten_obs=flatten_observations,
+            flatten_obs=policy_config.flatten_obs,
+            image_obs=policy_config.image_obs,
         ),
     )
 

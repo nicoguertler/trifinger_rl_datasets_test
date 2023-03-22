@@ -1,10 +1,30 @@
 import typing
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
 import gymnasium as gym
 import numpy as np
 
 ObservationType = typing.Union[np.ndarray, typing.Dict[str, typing.Any]]
+
+
+@dataclass
+class PolicyConfig:
+    """Policy configuration specifying what kind of observations the policy expects.
+    
+    Args:
+        flatten_obs:  If True, the policy expects observations as flattened arrays.
+            Otherwise, it expects them as dictionaries.
+        image_obs: If True, the policy expects the observations to contain camera
+            images. Otherwise, images are not included. If images_obs is True and
+            flatten_obs is True, the observation is a tuple containing the flattened
+            observation excluding the images and the images in a numpy array. If 
+            flatten_obs is False, the images are included in the observation
+            dictionary.
+            """
+
+    flatten_obs: bool = True
+    image_obs: bool = False
 
 
 class PolicyBase(ABC):
@@ -22,11 +42,12 @@ class PolicyBase(ABC):
         pass
 
     @staticmethod
-    def is_using_flattened_observations() -> bool:
-        """True if the policy expects observations as flattened arrays, False if it
-        expects them as dictionaries.
+    def get_policy_config() -> PolicyConfig:
+        """Returns the policy configuration.
+        
+        This specifies what kind of observations the policy expects.
         """
-        return True
+        return PolicyConfig()
 
     def reset(self) -> None:
         """Will be called at the beginning of each episode."""

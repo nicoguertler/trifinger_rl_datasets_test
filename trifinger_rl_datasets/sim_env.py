@@ -603,7 +603,7 @@ class SimTriFingerCubeEnv(gym.Env):
                 desired_goal = {
                     "object_keypoints": get_keypoints_from_pose(self.active_goal)
                 }
-                achieved_goal = {"object_keypoints": camera_obs_processed["keypoints"]}
+                achieved_goal = {"object_keypoints": camera_obs_processed["object_keypoints"]}
             else:
                 desired_goal = desired_goal_pos_ori
                 achieved_goal = achieved_goal_pos_ori
