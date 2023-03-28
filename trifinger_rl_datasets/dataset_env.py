@@ -135,6 +135,7 @@ class TriFingerDatasetEnv(gym.Env):
         flatten_obs=True,
         scale_obs=False,
         set_terminals=False,
+        data_dir=None,
         **kwargs,
     ):
         """
@@ -161,6 +162,11 @@ class TriFingerDatasetEnv(gym.Env):
             scale_obs (bool): Whether to scale all components of the
                 observation to interval [-1, 1]. Only implemented
                 for flattend observations.
+            set_terminals (bool): Whether to set the terminals instead
+                of the timeouts.
+            data_dir (str or Path): Directory where the dataset is
+                stored.  If None, the default data directory
+                (~/.trifinger_rl_datasets) is used.
         """
         super().__init__(**kwargs)
 
@@ -175,13 +181,16 @@ class TriFingerDatasetEnv(gym.Env):
         self.scale_obs = scale_obs
         self.set_terminals = set_terminals
         self._local_dataset_path = None
+        if data_dir is None:
+            data_dir = Path.home() / ".trifinger_rl_datasets"
+        self.data_dir = Path(data_dir)
 
-        t_kwargs = deepcopy(trifinger_kwargs)
-        t_kwargs["image_obs"] = image_obs
-        t_kwargs["visualization"] = visualization
+        self.t_kwargs = deepcopy(trifinger_kwargs)
+        self.t_kwargs["image_obs"] = image_obs
+        self.t_kwargs["visualization"] = visualization
 
         # underlying simulated TriFinger environment
-        self.sim_env = SimTriFingerCubeEnv(**t_kwargs)
+        self.sim_env = SimTriFingerCubeEnv(**self.t_kwargs)
         self._orig_obs_space = self.sim_env.observation_space
 
         # remove camera observations from space used for flattening as images
@@ -253,8 +262,7 @@ class TriFingerDatasetEnv(gym.Env):
         continuing a download if it was interrupted. The complete
         dataset is then reconstructed by concatenating the parts."""
         if self._local_dataset_path is None:
-            data_dir = Path("~/.trifinger_rl_datasets").expanduser()
-            dataset_dir = data_dir / (self.name + ".zarr")
+            dataset_dir = self.data_dir / (self.name + ".zarr")
             dataset_dir.mkdir(exist_ok=True, parents=True)
             local_path = dataset_dir / "data.mdb"
             if not local_path.exists():
@@ -266,10 +274,9 @@ class TriFingerDatasetEnv(gym.Env):
                 for i, part_hash in enumerate(tqdm(dataset_info["md5_hash_parts"])):
                     part_path = dataset_dir / f"{self.name}_{i:03d}"
                     if not part_path.exists():
-                        # strip extension from dataset url
-                        stripped_url = ".".join(self.dataset_url.split(".")[:-1])
-                        stripped_url = self.dataset_url.rsplit(".", 1)[0]
-                        part_url = stripped_url + f"_{i:03d}"
+                        # strip filename from url
+                        stripped_url = self.dataset_url.rsplit("/", 1)[0]
+                        part_url = stripped_url + f"/part_{i:03d}"
                         urllib.request.urlretrieve(part_url, part_path)
                         if not part_path.exists():
                             raise IOError(
@@ -781,7 +788,7 @@ class TriFingerDatasetEnv(gym.Env):
 
     def step(
         self, action: np.ndarray, **kwargs
-    ) -> Tuple[Union[Dict, np.ndarray], float, bool, Dict]:
+    ) -> Tuple[Union[Dict, np.ndarray], float, bool, bool, Dict]:
         """Execute one step.
 
         Args:
@@ -789,7 +796,15 @@ class TriFingerDatasetEnv(gym.Env):
 
         Returns:
             A tuple with
-            - observation (dict): agent's observation of the current environment.
+            - observation (dict or tuple): agent's observation of the current
+                environment.  If `self.flatten_obs` is False then as a dictionary.
+                If `self.flatten_obs` is True then either as a 1D NumPy array
+                (if no images are to be included) or as a tuple (if images are
+                to be included) consisting of
+                * a 1D NumPy array containing all observations except the
+                camera images, and
+                * a NumPy array of shape (n_cameras, n_channels, height, width)
+                containing the camera images.
             - reward (float): amount of reward returned after previous action.
             - terminated (bool): whether the MDP has reached a terminal state. If true,
                 the user needs to call `reset()`.
