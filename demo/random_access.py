@@ -33,10 +33,16 @@ if __name__ == "__main__":
     argparser.add_argument(
         "--zarr_path", type=str, default=None, help="Path to HDF5 file to load."
     )
+    argparser.add_argument(
+        "--data-dir",
+        type=str,
+        default=None,
+        help="Path to data directory.If not set, the default data directory '~/.trifinger_rl_datasets' is used.",
+    )
     args = argparser.parse_args()
 
     # create environment
-    env = gym.make(args.env, disable_env_checker=True)
+    env = gym.make(args.env, disable_env_checker=True, data_dir=args.data_dir)
 
     stats = env.get_dataset_stats(zarr_path=args.zarr_path)
     print("Number of timesteps in dataset: ", stats["n_timesteps"])

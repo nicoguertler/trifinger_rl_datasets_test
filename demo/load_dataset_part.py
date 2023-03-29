@@ -29,10 +29,17 @@ if __name__ == "__main__":
     argparser.add_argument(
         "--flatten-obs", action="store_true", help="Flatten observations."
     )
-
+    argparser.add_argument(
+        "--data-dir", type=str, default=None, help="Path to data directory."
+    )
     args = argparser.parse_args()
 
-    env = gym.make(args.env, disable_env_checker=True, flatten_obs=args.flatten_obs)
+    env = gym.make(
+        args.env,
+        disable_env_checker=True,
+        flatten_obs=args.flatten_obs,
+        data_dir=args.data_dir,
+    )
 
     # load only a subset of obervations, actions and rewards
     dataset = env.get_dataset(rng=tuple(args.range), zarr_path=args.zarr_path)

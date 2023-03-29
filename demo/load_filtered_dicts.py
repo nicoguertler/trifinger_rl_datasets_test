@@ -24,6 +24,12 @@ if __name__ == "__main__":
         action="store_true",
         help="Flatten observations again after filtering if this is set.",
     )
+    parser.add_argument(
+        "--data-dir",
+        type=str,
+        default=None,
+        help="Path to data directory.If not set, the default data directory '~/.trifinger_rl_datasets' is used.",
+    )
     args = parser.parse_args()
 
     # Nested dictionary defines which observations to keep.
@@ -46,6 +52,7 @@ if __name__ == "__main__":
         obs_to_keep=None if args.do_not_filter_obs else obs_to_keep,
         # flatten observation
         flatten_obs=args.flatten_obs,
+        data_dir=args.data_dir,
     )
 
     dataset = env.get_dataset()

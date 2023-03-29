@@ -79,10 +79,13 @@ if __name__ == "__main__":
         action="store_false",
         help="Do not include the timestep dimension in the output array.",
     )
+    argparser.add_argument(
+        "--data-dir", type=str, default=None, help="Path to data directory."
+    )
     args = argparser.parse_args()
 
     # create environment
-    env = gym.make(args.env, disable_env_checker=True)
+    env = gym.make(args.env, disable_env_checker=True, data_dir=args.data_dir)
 
     # get information about image data
     image_stats = env.get_image_stats(zarr_path=args.zarr_path)

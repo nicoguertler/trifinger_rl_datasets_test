@@ -27,6 +27,9 @@ if __name__ == "__main__":
         action="store_false",
         help="Disables visualization, i.e., rendering of the environment in a GUI.",
     )
+    argparser.add_argument(
+        "--data-dir", type=str, default=None, help="Path to data directory."
+    )
     args = argparser.parse_args()
 
     env = gym.make(
@@ -36,6 +39,7 @@ if __name__ == "__main__":
         # include camera images in the observation
         image_obs=True,
         flatten_obs=args.flatten_obs,
+        data_dir=args.data_dir,
     )
     obs = env.reset()
     truncated = False

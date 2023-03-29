@@ -10,6 +10,20 @@ from .policy_base import PolicyBase, PolicyConfig
 dataset_params = [
     # simulation
     # =========
+    # push expert with images (mini version for testing)
+    {
+        "name": "trifinger-cube-push-sim-expert-image-v0",
+        "dataset_url": "https://robots.real-robot-challenge.com/public/trifinger_rl_datasets/trifinger-cube-push-sim-expert-image-v0.zarr/dataset.yaml",
+        "ref_min_score": 0.0,
+        "ref_max_score": 1.0 * 15000 / 20,
+        "real_robot": False,
+        "trifinger_kwargs": {
+            "episode_length": 750,
+            "difficulty": 1,
+            "keypoint_obs": True,
+            "obs_action_delay": 10,
+        },
+    },
     # real robot
     # ==========
     # push expert with images (mini version for testing)
