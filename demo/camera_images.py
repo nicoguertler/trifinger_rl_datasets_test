@@ -41,7 +41,7 @@ if __name__ == "__main__":
         flatten_obs=args.flatten_obs,
         data_dir=args.data_dir,
     )
-    obs = env.reset()
+    obs, info = env.reset()
     truncated = False
     terminated = False
 

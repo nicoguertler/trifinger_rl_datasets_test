@@ -39,7 +39,7 @@ if __name__ == "__main__":
 
     print("First observation: ", dataset["observations"][0])
 
-    obs = env.reset()
+    obs, info = env.reset()
     truncated = False
     terminated = False
     while not (truncated or terminated):
