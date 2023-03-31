@@ -569,6 +569,8 @@ class SimTriFingerCubeEnv(gym.Env):
             # RGB camera images created with software renderer
             # (using openGL requires GUI to run)
             images = np.array([cam.image for cam in camera_observation.cameras])
+            # print(camera_observation.cameras[0].image.shape) # TODO: remove
+            # print(images.shape)
             # convert to channel first
             images = np.transpose(images, (0, 3, 1, 2))
             camera_obs_processed["images"] = images

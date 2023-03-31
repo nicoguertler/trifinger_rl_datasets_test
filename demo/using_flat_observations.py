@@ -20,7 +20,7 @@ if __name__ == "__main__":
         "--data-dir",
         type=str,
         default=None,
-        help="Path to data directory.If not set, the default data directory '~/.trifinger_rl_datasets' is used.",
+        help="Path to data directory. If not set, the default data directory '~/.trifinger_rl_datasets' is used.",
     )
     args = argparser.parse_args()
 

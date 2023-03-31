@@ -195,7 +195,7 @@ class TriFingerDatasetEnv(gym.Env):
 
         # remove camera observations from space used for flattening as images
         # are treated separetely and not flattened
-        if self.image_obs:
+        if self.image_obs and self.flatten_obs:
             stripped_camera_observations = spaces.Dict(
                 {
                     k: v
