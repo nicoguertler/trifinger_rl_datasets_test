@@ -40,6 +40,21 @@ dataset_params = [
             "obs_action_delay": 10,
         },
     },
+    # lift expert with images
+    {
+        "name": "trifinger-cube-lift-real-expert-image-v0",
+        "dataset_url": "https://robots.real-robot-challenge.com/public/trifinger_rl_datasets/trifinger-cube-lift-real-expert-image-v0.zarr/dataset.yaml",
+        "ref_min_score": 0.0,
+        "ref_max_score": 1.0 * 30000 / 20,
+        "real_robot": True,
+        "image_obs": True,
+        "trifinger_kwargs": {
+            "episode_length": 1500,
+            "difficulty": 4,
+            "keypoint_obs": True,
+            "obs_action_delay": 2,
+        },
+    },
 ]
 
 

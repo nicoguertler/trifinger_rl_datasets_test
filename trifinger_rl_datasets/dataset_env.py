@@ -129,7 +129,7 @@ class TriFingerDatasetEnv(gym.Env):
         ref_min_score,
         trifinger_kwargs,
         real_robot=False,
-        image_obs=True,
+        image_obs=False,
         visualization=False,
         obs_to_keep=None,
         flatten_obs=True,
@@ -191,11 +191,17 @@ class TriFingerDatasetEnv(gym.Env):
 
         # underlying simulated TriFinger environment
         self.sim_env = SimTriFingerCubeEnv(**self.t_kwargs)
-        self._orig_obs_space = self.sim_env.observation_space
+        # a copy of the original observation space which is used when
+        # filtering the observations
+        self._orig_obs_space = deepcopy(self.sim_env.observation_space)
+        # the space used for unflattening the observations (images will
+        # be removed from this space)
+        self._unflattening_space = deepcopy(self.sim_env.observation_space)
 
-        # remove camera observations from space used for flattening as images
-        # are treated separetely and not flattened
-        if self.image_obs and self.flatten_obs:
+        # remove camera observations from space used for flattening
+        # and unflattening as images are treated separetely and not
+        # flattened
+        if self.image_obs:
             stripped_camera_observations = spaces.Dict(
                 {
                     k: v
@@ -205,8 +211,13 @@ class TriFingerDatasetEnv(gym.Env):
                     if k != "images"
                 }
             )
-            self._orig_obs_space["camera_observation"] = stripped_camera_observations
+            self._unflattening_space["camera_observation"] = stripped_camera_observations
+            if self.flatten_obs:
+                # if the observations are eventually flattened, they do not contain
+                # images anymore
+                self._orig_obs_space["camera_observation"] = stripped_camera_observations
         self._orig_flat_obs_space = spaces.flatten_space(self._orig_obs_space)
+        self._flat_unflattening_space = spaces.flatten_space(self._unflattening_space)
 
         if scale_obs and not flatten_obs:
             raise NotImplementedError(
@@ -686,9 +697,9 @@ class TriFingerDatasetEnv(gym.Env):
         # clip to make sure that there are no outliers in the data
         if clip:
             data_dict["observations"] = data_dict["observations"].clip(
-                min=self._orig_flat_obs_space.low,
-                max=self._orig_flat_obs_space.high,
-                dtype=self._orig_flat_obs_space.dtype,
+                min=self._flat_unflattening_space.low,
+                max=self._flat_unflattening_space.high,
+                dtype=self._flat_unflattening_space.dtype,
             )
 
         if not (self.flatten_obs and self.obs_to_keep is None):
@@ -697,7 +708,7 @@ class TriFingerDatasetEnv(gym.Env):
             obs = data_dict["observations"]
             for i in range(obs.shape[0]):
                 unflattened_obs.append(
-                    spaces.unflatten(self._orig_obs_space, obs[i, ...])
+                    spaces.unflatten(self._unflattening_space, obs[i, ...])
                 )
             data_dict["observations"] = unflattened_obs
 
