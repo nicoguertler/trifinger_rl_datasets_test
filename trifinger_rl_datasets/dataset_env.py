@@ -570,6 +570,7 @@ class TriFingerDatasetEnv(gym.Env):
             image_loader.start()
         for thread in threads:
             thread.join()
+        store.close()
 
         return unique_images
 
@@ -774,6 +775,8 @@ class TriFingerDatasetEnv(gym.Env):
                     index = unique_to_original[i * n_cameras] // n_cameras
                 images[i] = unique_images[index]
             data_dict["images"] = images
+
+        store.close()
 
         return data_dict
 
