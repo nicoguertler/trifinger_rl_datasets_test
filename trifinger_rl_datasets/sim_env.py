@@ -575,7 +575,7 @@ class SimTriFingerCubeEnv(gym.Env):
             print(type(camera_observation.cameras[0].image))
             print(images.shape)
             # convert to channel first
-            # images = np.transpose(images, (0, 3, 1, 2)) # TODO: re-enable
+            images = np.transpose(images, (0, 3, 1, 2)) # TODO: re-enable
             camera_obs_processed["images"] = images
         if self.keypoint_obs:
             camera_obs_processed["object_keypoints"] = get_keypoints_from_pose(
