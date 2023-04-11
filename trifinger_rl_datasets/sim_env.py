@@ -453,6 +453,7 @@ class SimTriFingerCubeEnv(gym.Env):
         """Reset the environment."""
 
         super().reset()
+        print("ALAAAAAAAAAAAAAAAARM!")
 
         # hard-reset simulation
         del self.platform
