@@ -570,6 +570,7 @@ class SimTriFingerCubeEnv(gym.Env):
             # (using openGL requires GUI to run)
             images = np.array([cam.image for cam in camera_observation.cameras])
             print(camera_observation.cameras[0].image.shape) # TODO: remove
+            print(camera_observation.cameras[0].image) # TODO: remove
             print(images.shape)
             # convert to channel first
             images = np.transpose(images, (0, 3, 1, 2))
