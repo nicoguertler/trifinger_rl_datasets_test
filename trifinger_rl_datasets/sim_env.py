@@ -3,6 +3,7 @@ from time import sleep, time
 from typing import Tuple, Dict, Any, Optional
 import logging
 
+import cv2
 import gymnasium as gym
 import numpy as np
 from pybullet import ER_TINY_RENDERER
@@ -567,9 +568,13 @@ class SimTriFingerCubeEnv(gym.Env):
             "confidence": np.array([object_observation.confidence], dtype=np.float32),
         }
         if self.image_obs:
-            # RGB camera images created with software renderer
-            # (using openGL requires GUI to run)
-            images = np.array([cam.image for cam in camera_observation.cameras])
+            if len(camera_observation.cameras[0].image.shape) == 2:
+                # images from real platform have to be debayered
+                images = np.array([cv2.cvtColor(cam.image, cv2.COLOR_BAYER_BG2RGB) for cam in camera_observation.cameras])
+            else:
+                # RGB camera images created with software renderer
+                # (using openGL requires GUI to run)
+                images = np.array([cam.image for cam in camera_observation.cameras])
             print(camera_observation.cameras[0].image.shape) # TODO: remove
             print(camera_observation.cameras[0].image) # TODO: remove
             print(type(camera_observation.cameras[0].image))
