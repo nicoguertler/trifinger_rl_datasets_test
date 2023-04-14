@@ -574,6 +574,29 @@ class TriFingerDatasetEnv(gym.Env):
 
         return unique_images
 
+    def convert_timestep_to_image_index(
+            self,
+            timesteps: np.ndarray,
+            zarr_path: Union[str, os.PathLike] = None,
+        ) -> np.ndarray:
+        """Convert camera timesteps to image indices.
+
+        Args:
+            timesteps:  Array of camera timesteps.
+        Returns:
+            Array of image indices.
+        """
+        if zarr_path is None:
+            zarr_path = self._download_dataset()
+        store = zarr.LMDBStore(zarr_path, readonly=True)
+        root = zarr.open(store=store)
+
+        # mapping from observation index to image index
+        # (necessary since the camera frequency < control frequency)
+        image_indices = root["obs_to_image_index"].get_coordinate_selection(timesteps)
+        store.close()
+        return image_indices
+
     def get_dataset(
         self,
         zarr_path: Union[str, os.PathLike] = None,

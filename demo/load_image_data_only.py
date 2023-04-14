@@ -1,4 +1,4 @@
-"""Load image data from HDF5 file and display it."""
+"""Load image data from Zarr file and display it."""
 
 
 import argparse
@@ -66,7 +66,7 @@ if __name__ == "__main__":
         help="Number of camera timesteps to load image data for.",
     )
     argparser.add_argument(
-        "--zarr-path", type=str, default=None, help="Path to HDF5 file to load."
+        "--zarr-path", type=str, default=None, help="Path to Zarr file to load."
     )
     argparser.add_argument(
         "--do-not-show-images",
