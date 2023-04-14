@@ -433,10 +433,13 @@ class SimTriFingerCubeEnv(gym.Env):
         # time of the new observation
         self.t_obs = t
 
+        time0 = time()
         observation, info = self._create_observation(self.t_obs, action)
+        print("create_observation", time() - time0)
         reward = self.compute_reward(
             observation["achieved_goal"], observation["desired_goal"], info
         )
+        print("create_observation & compute_reward", time() - time0
         truncated = self.step_count >= self.episode_length
 
         if not truncated and preappend_actions:
