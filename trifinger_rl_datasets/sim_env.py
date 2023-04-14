@@ -433,6 +433,17 @@ class SimTriFingerCubeEnv(gym.Env):
         # time of the new observation
         self.t_obs = t
 
+        truncated = self.step_count >= self.episode_length
+
+        if not truncated and preappend_actions:
+            # Append action to action queue of robot for as many time
+            # steps as the obs_action_delay dictates. This gives the
+            # user time to evaluate the policy.
+            # Doing this before creating the observations avoids a lag
+            # due to the time it takes to create the observations.
+            for _ in range(self.obs_action_delay):
+                self._append_desired_action(robot_action)
+
         time0 = time()
         observation, info = self._create_observation(self.t_obs, action)
         print("create_observation", time() - time0)
@@ -440,14 +451,6 @@ class SimTriFingerCubeEnv(gym.Env):
             observation["achieved_goal"], observation["desired_goal"], info
         )
         print("create_observation & compute_reward", time() - time0)
-        truncated = self.step_count >= self.episode_length
-
-        if not truncated and preappend_actions:
-            # Append action to action queue of robot for as many time
-            # steps as the obs_action_delay dictates. This gives the
-            # user time to evaluate the policy.
-            for _ in range(self.obs_action_delay):
-                self._append_desired_action(robot_action)
 
         return observation, reward, False, truncated, info
 
