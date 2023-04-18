@@ -10,7 +10,9 @@ import numpy as np
 import trifinger_rl_datasets  # noqa
 
 
-def create_video(env, output_path, camera_id, timestep_range, zarr_path):
+def create_video(
+    env, output_path, camera_id, timestep_range, zarr_path, show_reward=True
+):
     """Create video from camera images.
 
     Args:
@@ -27,6 +29,14 @@ def create_video(env, output_path, camera_id, timestep_range, zarr_path):
         zarr_path=zarr_path,
         timestep_dimension=True,
     )
+    if show_reward:
+        # load rewards for the specified timesteps
+        image_indices = env.convert_timestep_to_image_index(
+            np.arange(*tuple(timestep_range))
+        )
+        dataset = env.get_dataset(
+            rng=(timestep_range[0], timestep_range[1] + 1), zarr_path=zarr_path
+        )
 
     # select only images from the specified camera
     images = images[:, camera_id, ...]
@@ -38,10 +48,18 @@ def create_video(env, output_path, camera_id, timestep_range, zarr_path):
         output_path, fourcc, fps, (images.shape[-1], images.shape[-2])
     )
 
+    max_bar_height = 50
     # loop over images
-    for image in images:
+    for i, image in enumerate(images):
         # convert to channeel last format for cv2
         img = np.transpose(image, (1, 2, 0))
+        if show_reward:
+            # draw bar with height proportional to reward
+            index = np.argmax(image_indices == i * 3 + image_range[0])
+            reward = dataset["rewards"][index]
+            img[img.shape[0] - max_bar_height :, 260:, :] = 150
+            bar_height = int(reward * max_bar_height)
+            img[img.shape[0] - bar_height :, 260:, 1] = 255
         # convert RGB to BGR for cv2
         img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
         # write image to video
@@ -53,15 +71,9 @@ def create_video(env, output_path, camera_id, timestep_range, zarr_path):
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(description=__doc__)
+    argparser.add_argument("output_path", type=str, help="Path to output video file.")
     argparser.add_argument(
-        "output_path",
-        type=str,
-        help="Path to output video file."
-    )
-    argparser.add_argument(
-        "camera_id",
-        type=int,
-        help="ID of the camera for which to load images.",
+        "camera_id", type=int, help="ID of the camera for which to load images."
     )
     argparser.add_argument(
         "--env",
@@ -82,7 +94,17 @@ if __name__ == "__main__":
     argparser.add_argument(
         "--data-dir", type=str, default=None, help="Path to data directory."
     )
+    argparser.add_argument(
+        "--no-reward", action="store_true", help="Do not show reward bar. "
+    )
     args = argparser.parse_args()
 
     env = gym.make(args.env, disable_env_checker=True, data_dir=args.data_dir)
-    create_video(env, args.output_path, args.camera_id, args.timestep_range, args.zarr_path)
+    create_video(
+        env,
+        args.output_path,
+        args.camera_id,
+        args.timestep_range,
+        args.zarr_path,
+        not args.no_reward,
+    )

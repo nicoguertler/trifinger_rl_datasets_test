@@ -25,11 +25,7 @@ if __name__ == "__main__":
     )
     args = argparser.parse_args()
 
-    env = gym.make(
-        args.env,
-        disable_env_checker=True,
-        visualization=args.visualization
-    )
+    env = gym.make(args.env, disable_env_checker=True, visualization=args.visualization)
     obs, info = env.reset()
     truncated = False
 
